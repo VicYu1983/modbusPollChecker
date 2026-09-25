@@ -51,37 +51,32 @@ Modbus TCP Adapter + pymodbus
 
 ```text
 modbusPollChecker/
-├── DEVELOPMENT.md              # 需求與技術決策
-├── INITIAL_DEVELOPMENT.md      # 本文件：初版實作規格
-├── modbus_checker.py           # 既有命令列檢查程式
-├── devices.csv                 # 既有 CSV 範例
-├── requirements.txt
-├── server/
-│   ├── app.py                  # API 進入點
-│   ├── schemas.py              # 設定與結果資料模型
-│   ├── validation.py           # 設備與案場設定驗證
-│   ├── site_store.py           # 案場 JSON 儲存、匯入與匯出
-│   ├── check_service.py        # 檢查流程與並行控制
-│   ├── modbus_adapter.py       # pymodbus 封裝
-│   └── state.py                # 狀態快取與輪詢狀態
+├── docs/
+│   ├── DEVELOPMENT.md          # 需求與技術決策
+│   └── INITIAL_DEVELOPMENT.md  # 本文件：初版實作規格
+├── config/
+│   └── devices.csv             # 既有 CSV 範例
+├── backend/
+│   ├── requirements.txt
+│   ├── modbus_checker.py        # 既有命令列檢查程式
+│   └── app/
+│       ├── main.py             # API 進入點
+│       ├── schemas.py          # 設定與結果資料模型
+│       ├── site_store.py       # 案場 JSON 儲存、匯入與匯出
+│       ├── check_service.py    # 檢查流程與並行控制
+│       └── modbus_adapter.py   # pymodbus 封裝
+├── data/
+│   └── site.json               # 本機案場設定（執行時建立）
 ├── frontend/
 │   ├── package.json
 │   ├── index.html
 │   ├── src/
 │   │   ├── main.tsx
 │   │   ├── App.tsx
-│   │   ├── api/client.ts       # API 呼叫封裝
-│   │   ├── types.ts            # 前端 TypeScript 型別
-│   │   ├── pages/StatusPage.tsx
-│   │   ├── components/DeviceTable.tsx
-│   │   ├── components/DeviceForm.tsx
-│   │   ├── components/SiteImportExport.tsx
-│   │   └── styles.css
+│   │   ├── api/client.ts       # API 呼叫封裝與型別
+│   │   ├── App.css
+│   │   └── index.css
 │   └── vite.config.ts
-└── tests/
-    ├── test_validation.py
-    ├── test_site_store.py
-    └── test_modbus_adapter.py
 ```
 
 ## 5. 前端設計

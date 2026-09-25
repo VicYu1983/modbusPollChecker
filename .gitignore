@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.log
+
+frontend/node_modules/
+frontend/dist/
+
+data/site.json
+.vscode/

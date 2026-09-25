@@ -1,36 +1,32 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { App as AntApp, Alert, Button, Card, Col, Divider, Form, Input, InputNumber, Layout, Modal, Row, Select, Space, Statistic, Switch, Table, Tag, Typography, Upload } from 'antd'
 import type { UploadProps } from 'antd'
 import { CloudDownloadOutlined, CloudUploadOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { api, type CheckResult, type DeviceConfig, type SiteConfig } from './api/client'
 import './App.css'
 
 type DeviceStatus = 'PASS' | 'FAIL' | 'TIMEOUT' | 'CONFIG_ERROR' | 'UNKNOWN'
-type Device = { name: string; ip: string; port: number; unit_id: number; address: number; quantity: number; function: '03' | '04'; expected: string | null; address_mode: 'dec' | 'hex'; connect_timeout_ms: number; response_timeout_ms: number; scan_rate_ms: number; delay_between_polls_ms: number; enabled: boolean; status: DeviceStatus; lastChecked: string; elapsedMs?: number; error?: string }
-type SiteDevice = Omit<Device, 'status' | 'lastChecked' | 'elapsedMs' | 'error'>
-type SiteConfig = { schema_version: 1; site_name: string; devices: SiteDevice[] }
-
-const initialDevices: Device[] = [
-  { name: 'PLC-01', ip: '192.168.0.50', port: 502, unit_id: 1, address: 0, quantity: 10, function: '03', expected: null, address_mode: 'dec', connect_timeout_ms: 3000, response_timeout_ms: 1000, scan_rate_ms: 1000, delay_between_polls_ms: 20, enabled: true, status: 'PASS', lastChecked: '剛剛', elapsedMs: 35 },
-  { name: 'Pump-02', ip: '192.168.9.116', port: 502, unit_id: 1, address: 0, quantity: 2, function: '03', expected: '0..100', address_mode: 'dec', connect_timeout_ms: 3000, response_timeout_ms: 1000, scan_rate_ms: 0, delay_between_polls_ms: 20, enabled: true, status: 'TIMEOUT', lastChecked: '2 分鐘前', elapsedMs: 1001, error: '等待設備回應逾時' },
-]
+type Device = DeviceConfig & { status: DeviceStatus; lastChecked: string; elapsedMs?: number; error?: string }
 const statusMeta: Record<DeviceStatus, { label: string; color: string }> = { PASS: { label: '正常', color: 'success' }, FAIL: { label: '失敗', color: 'error' }, TIMEOUT: { label: '逾時', color: 'warning' }, CONFIG_ERROR: { label: '設定錯誤', color: 'error' }, UNKNOWN: { label: '未檢查', color: 'default' } }
 const defaults = { name: '', ip: '', port: 502, unit_id: 1, address: 0, quantity: 10, function: '03' as const, expected: '', address_mode: 'dec' as const, connect_timeout_ms: 3000, response_timeout_ms: 1000, scan_rate_ms: 0, delay_between_polls_ms: 20, enabled: true }
 
 function Dashboard() {
-  const [siteName, setSiteName] = useState('案場 A')
-  const [devices, setDevices] = useState(initialDevices)
+  const [siteName, setSiteName] = useState('未命名案場')
+  const [devices, setDevices] = useState<Device[]>([])
   const [editing, setEditing] = useState<Device | null>(null)
   const [form] = Form.useForm()
   const [checking, setChecking] = useState(false)
   const { message } = AntApp.useApp()
   const counts = useMemo(() => ({ total: devices.length, healthy: devices.filter((d) => d.status === 'PASS').length, attention: devices.filter((d) => d.status !== 'PASS').length }), [devices])
 
-  const runCheck = (target?: Device) => { setChecking(true); window.setTimeout(() => { setDevices((current) => current.map((device) => target && device.name !== target.name ? device : { ...device, status: 'PASS', lastChecked: '剛剛', elapsedMs: 42, error: undefined })); setChecking(false); message.success(target ? `${target.name} 檢查完成` : '全部設備檢查完成') }, 700) }
-  const submit = async () => { const values = await form.validateFields(); const next = { ...values, expected: values.expected || null, status: editing?.status ?? 'UNKNOWN', lastChecked: editing?.lastChecked ?? '尚未檢查' } as Device; setDevices((current) => editing ? current.map((d) => d.name === editing.name ? next : d) : [...current, next]); setEditing(null); form.resetFields(); message.success(editing ? '連線設定已更新' : '連線已新增') }
+  const toDevice = (device: DeviceConfig, result?: CheckResult): Device => ({ ...device, status: result?.status ?? 'UNKNOWN', lastChecked: result ? new Date(result.timestamp).toLocaleString() : '尚未檢查', elapsedMs: result?.elapsed_ms, error: result?.error_message ?? undefined })
+  useEffect(() => { api.getSite().then((site) => { setSiteName(site.site_name); setDevices(site.devices.map((device) => toDevice(device))) }).catch((error: unknown) => message.error(error instanceof Error ? error.message : '案場設定讀取失敗')) }, [message])
+  const runCheck = async (target?: Device) => { setChecking(true); try { const results = await api.check(target?.name); setDevices((current) => current.map((device) => { const result = results.find((item) => item.device_name === device.name); return result ? toDevice(device, result) : device })); message.success(target ? `${target.name} 檢查完成` : '全部設備檢查完成') } catch (error) { message.error(error instanceof Error ? error.message : '設備檢查失敗') } finally { setChecking(false) } }
+  const submit = async () => { const values = await form.validateFields() as DeviceConfig; const next = { ...values, expected: values.expected || null }; try { if (editing) await api.updateDevice(editing.name, next); else await api.addDevice(next); setDevices((current) => editing ? current.map((d) => d.name === editing.name ? toDevice(next, d.status === 'UNKNOWN' ? undefined : { device_name: d.name, timestamp: new Date().toISOString(), status: d.status, elapsed_ms: d.elapsedMs ?? 0, error_message: d.error ?? null }) : d) : [...current, toDevice(next)]); setEditing(null); form.resetFields(); message.success(editing ? '連線設定已更新' : '連線已新增') } catch (error) { message.error(error instanceof Error ? error.message : '連線設定儲存失敗') } }
   const openEdit = (device: Device) => { setEditing(device); form.setFieldsValue(device) }
-  const remove = (device: Device) => Modal.confirm({ title: `刪除 ${device.name}？`, content: '刪除後仍可從案場 JSON 重新匯入。', okText: '刪除', cancelText: '取消', okButtonProps: { danger: true }, onOk: () => { setDevices((current) => current.filter((d) => d.name !== device.name)); message.success('設備已刪除') } })
-  const exportConfig = () => { const config: SiteConfig = { schema_version: 1, site_name: siteName, devices: devices.map(({ name, ip, port, unit_id, address, quantity, function: functionCode, expected, address_mode, connect_timeout_ms, response_timeout_ms, scan_rate_ms, delay_between_polls_ms, enabled }) => ({ name, ip, port, unit_id, address, quantity, function: functionCode, expected, address_mode, connect_timeout_ms, response_timeout_ms, scan_rate_ms, delay_between_polls_ms, enabled })) }; const url = URL.createObjectURL(new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `${siteName}-modbus-config.json`; link.click(); URL.revokeObjectURL(url); message.success('案場設定已匯出') }
-  const importConfig: UploadProps['beforeUpload'] = (file) => { const reader = new FileReader(); reader.onload = () => { try { const config = JSON.parse(String(reader.result)) as SiteConfig; if (config.schema_version !== 1 || !config.site_name || !Array.isArray(config.devices)) throw new Error('格式不符合 schema_version 1'); setSiteName(config.site_name); setDevices(config.devices.map((device) => ({ ...device, status: 'UNKNOWN', lastChecked: '尚未檢查' }))); message.success(`已匯入 ${config.site_name}`) } catch (error) { message.error(error instanceof Error ? error.message : 'JSON 匯入失敗') } }; reader.readAsText(file); return false }
+  const remove = (device: Device) => Modal.confirm({ title: `刪除 ${device.name}？`, content: '刪除後仍可從案場 JSON 重新匯入。', okText: '刪除', cancelText: '取消', okButtonProps: { danger: true }, onOk: async () => { try { await api.deleteDevice(device.name); setDevices((current) => current.filter((d) => d.name !== device.name)); message.success('設備已刪除') } catch (error) { message.error(error instanceof Error ? error.message : '設備刪除失敗') } } })
+  const exportConfig = async () => { try { const config = await api.getSite(); const url = URL.createObjectURL(new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `${config.site_name}-modbus-config.json`; link.click(); URL.revokeObjectURL(url); message.success('案場設定已匯出') } catch (error) { message.error(error instanceof Error ? error.message : '案場設定匯出失敗') } }
+  const importConfig: UploadProps['beforeUpload'] = (file) => { const reader = new FileReader(); reader.onload = async () => { try { const config = JSON.parse(String(reader.result)) as SiteConfig; const saved = await api.importSite(config); setSiteName(saved.site_name); setDevices(saved.devices.map((device) => toDevice(device))); message.success(`已匯入 ${saved.site_name}`) } catch (error) { message.error(error instanceof Error ? error.message : 'JSON 匯入失敗') } }; reader.readAsText(file); return false }
   const columns = [
     { title: '設備', dataIndex: 'name', key: 'name', render: (name: string, d: Device) => <div className="device-name"><strong>{name}</strong><span>{d.ip}:{d.port}</span></div> },
     { title: '讀取設定', key: 'definition', render: (_: unknown, d: Device) => <span className="definition">FC {d.function} · {d.address === 0 ? '40001' : d.address} · {d.quantity} 筆</span> },
