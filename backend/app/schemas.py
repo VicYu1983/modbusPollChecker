@@ -81,6 +81,12 @@ class CheckRequest(BaseModel):
     device_name: str | None = None
 
 
+class PollingStatus(BaseModel):
+    active: bool
+    started_at: datetime | None = None
+    last_poll_at: datetime | None = None
+
+
 class ErrorDetail(BaseModel):
     field: str
     message: str

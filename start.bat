@@ -11,5 +11,5 @@ start "Modbus Frontend" powershell -NoExit -ExecutionPolicy Bypass -Command "Set
 
 echo.
 echo Backend:  http://127.0.0.1:8000
- echo Frontend: http://127.0.0.1:5173
+echo Frontend: http://127.0.0.1:5173
 endlocal

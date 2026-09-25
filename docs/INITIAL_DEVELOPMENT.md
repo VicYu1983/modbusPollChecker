@@ -59,12 +59,14 @@ modbusPollChecker/
 ├── backend/
 │   ├── requirements.txt
 │   ├── modbus_checker.py        # 既有命令列檢查程式
-│   └── app/
+│   ├── app/
 │       ├── main.py             # API 進入點
 │       ├── schemas.py          # 設定與結果資料模型
 │       ├── site_store.py       # 案場 JSON 儲存、匯入與匯出
 │       ├── check_service.py    # 檢查流程與並行控制
 │       └── modbus_adapter.py   # pymodbus 封裝
+│   └── tests/
+│       └── test_core.py         # 核心服務與 schema 測試
 ├── data/
 │   └── site.json               # 本機案場設定（執行時建立）
 ├── frontend/
@@ -273,6 +275,9 @@ Store Layer
 | `DELETE` | `/api/devices/{name}` | 刪除設備 | `204` |
 | `POST` | `/api/check` | 檢查單台或全部設備 | 檢查結果陣列 |
 | `GET` | `/api/status` | 取得每台設備最近狀態 | 狀態陣列 |
+| `POST` | `/api/polling/start` | 啟動依設備週期的背景輪詢 | 輪詢狀態 |
+| `POST` | `/api/polling/stop` | 停止背景輪詢 | 輪詢狀態 |
+| `GET` | `/api/polling/status` | 取得背景輪詢狀態 | 輪詢狀態 |
 
 錯誤回應格式：
 

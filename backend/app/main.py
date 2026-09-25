@@ -114,3 +114,20 @@ def check_devices(request: CheckRequest) -> list[dict[str, object]]:
 @app.get("/api/status")
 def get_status() -> list[dict[str, object]]:
     return [result.model_dump(mode="json") for result in check_service.status()]
+
+
+@app.post("/api/polling/start")
+def start_polling() -> dict[str, object]:
+    started = check_service.start_polling(store.load)
+    return {"started": started, "status": check_service.polling_status().model_dump(mode="json")}
+
+
+@app.post("/api/polling/stop")
+def stop_polling() -> dict[str, object]:
+    stopped = check_service.stop_polling()
+    return {"stopped": stopped, "status": check_service.polling_status().model_dump(mode="json")}
+
+
+@app.get("/api/polling/status")
+def get_polling_status() -> dict[str, object]:
+    return check_service.polling_status().model_dump(mode="json")

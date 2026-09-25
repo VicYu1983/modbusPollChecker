@@ -29,6 +29,12 @@ export type CheckResult = {
   error_message: string | null
 }
 
+export type PollingStatus = {
+  active: boolean
+  started_at: string | null
+  last_poll_at: string | null
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
@@ -49,4 +55,8 @@ export const api = {
   updateDevice: (name: string, device: DeviceConfig) => request<DeviceConfig>(`/api/devices/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(device) }),
   deleteDevice: (name: string) => request<void>(`/api/devices/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   check: (deviceName?: string) => request<CheckResult[]>('/api/check', { method: 'POST', body: JSON.stringify(deviceName ? { device_name: deviceName } : {}) }),
+  getStatus: () => request<CheckResult[]>('/api/status'),
+  startPolling: () => request<{ started: boolean; status: PollingStatus }>('/api/polling/start', { method: 'POST' }),
+  stopPolling: () => request<{ stopped: boolean; status: PollingStatus }>('/api/polling/stop', { method: 'POST' }),
+  getPollingStatus: () => request<PollingStatus>('/api/polling/status'),
 }
