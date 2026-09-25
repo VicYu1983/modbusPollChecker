@@ -25,6 +25,7 @@ export type CheckResult = {
   device_name: string
   timestamp: string
   status: 'PASS' | 'FAIL' | 'TIMEOUT' | 'CONFIG_ERROR' | 'UNKNOWN'
+  values: Array<number | boolean>
   elapsed_ms: number
   error_message: string | null
 }
