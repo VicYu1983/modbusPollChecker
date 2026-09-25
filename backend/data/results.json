@@ -1,0 +1,33 @@
+[
+  {
+    "timestamp": "2026-09-24T18:08:17+0800",
+    "name": "Pump-01",
+    "ip": "192.168.9.116",
+    "port": 502,
+    "unit_id": 1,
+    "function": "03",
+    "address": 0,
+    "quantity": 2,
+    "status": "PASS",
+    "values": [
+      1,
+      0
+    ],
+    "elapsed_ms": 101,
+    "error": ""
+  },
+  {
+    "timestamp": "2026-09-24T18:08:19+0800",
+    "name": "Pump-02",
+    "ip": "192.168.0.50",
+    "port": 8777,
+    "unit_id": 1,
+    "function": "04",
+    "address": 40001,
+    "quantity": 2,
+    "status": "FAIL",
+    "values": [],
+    "elapsed_ms": 2010,
+    "error": "connection failed"
+  }
+]
