@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
 from time import sleep
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.check_service import CheckService
@@ -23,6 +24,7 @@ class FakeClient:
     def __init__(self, response: FakeResponse) -> None:
         self.response = response
         self.calls: list[str] = []
+        self.comm_params = SimpleNamespace(timeout_response=None)
 
     def connect(self) -> bool:
         return True
@@ -90,6 +92,7 @@ class CoreTests(unittest.TestCase):
                 result = ModbusTcpAdapter().check_device(device)
             self.assertEqual(client.calls, [function])
             self.assertEqual(result.plc_address, expected_address)
+            self.assertEqual(client.comm_params.timeout_response, 1.0)
 
     def test_polling_updates_status_and_stops(self) -> None:
         config = SiteConfig(

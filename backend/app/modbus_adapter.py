@@ -18,13 +18,14 @@ class ModbusTcpAdapter:
         client = ModbusTcpClient(
             str(device.ip),
             port=device.port,
-            timeout=device.response_timeout_ms / 1000,
+            timeout=device.connect_timeout_ms / 1000,
         )
         try:
             if not client.connect():
                 error_type = "CONNECTION_FAILED"
                 error_message = "connection failed"
             else:
+                client.comm_params.timeout_response = device.response_timeout_ms / 1000
                 if device.function == "01":
                     response = client.read_coils(
                         address=device.address,
