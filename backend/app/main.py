@@ -14,7 +14,7 @@ from .site_store import SiteStore
 
 
 ROOT = Path(__file__).resolve().parents[2]
-store = SiteStore(ROOT / "data" / "site.json")
+store = SiteStore(ROOT / "data")
 check_service = CheckService()
 
 
@@ -58,18 +58,25 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/site", response_model=SiteConfig)
-def get_site() -> SiteConfig:
-    return store.load()
+def get_site(site_name: str | None = None) -> SiteConfig:
+    return store.load(site_name)
 
 
-@app.post("/api/site/import", response_model=SiteConfig)
-def import_site(config: SiteConfig) -> SiteConfig:
+@app.get("/api/sites", response_model=list[str])
+def list_sites() -> list[str]:
+    return store.list_sites()
+
+
+@app.post("/api/site/save", response_model=SiteConfig)
+def save_site(config: SiteConfig) -> SiteConfig:
     return store.save(config)
 
 
-@app.get("/api/site/export", response_model=SiteConfig)
-def export_site() -> SiteConfig:
-    return store.load()
+@app.delete("/api/site/{site_name}", status_code=204)
+def delete_site(site_name: str) -> Response:
+    if not store.delete(site_name):
+        raise HTTPException(status_code=404, detail="site not found")
+    return Response(status_code=204)
 
 
 @app.post("/api/devices", response_model=DeviceConfig, responses={409: {"model": ErrorResponse}})

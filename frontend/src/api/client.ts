@@ -51,8 +51,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  getSite: () => request<SiteConfig>('/api/site'),
-  importSite: (config: SiteConfig) => request<SiteConfig>('/api/site/import', { method: 'POST', body: JSON.stringify(config) }),
+  getSite: (siteName?: string) => request<SiteConfig>(siteName ? `/api/site?site_name=${encodeURIComponent(siteName)}` : '/api/site'),
+  listSites: () => request<string[]>('/api/sites'),
+  saveSite: (config: SiteConfig) => request<SiteConfig>('/api/site/save', { method: 'POST', body: JSON.stringify(config) }),
+  deleteSite: (siteName: string) => request<void>(`/api/site/${encodeURIComponent(siteName)}`, { method: 'DELETE' }),
   addDevice: (device: DeviceConfig) => request<DeviceConfig>('/api/devices', { method: 'POST', body: JSON.stringify(device) }),
   updateDevice: (name: string, device: DeviceConfig) => request<DeviceConfig>(`/api/devices/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(device) }),
   deleteDevice: (name: string) => request<void>(`/api/devices/${encodeURIComponent(name)}`, { method: 'DELETE' }),
