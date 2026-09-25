@@ -95,7 +95,7 @@ class CoreTests(unittest.TestCase):
         config = SiteConfig(
             site_name="Test",
             devices=[
-                DeviceConfig(name="PLC-01", ip="127.0.0.1", scan_rate_ms=10),
+                DeviceConfig(name="PLC-01", ip="127.0.0.1"),
             ],
         )
         service = CheckService(adapter=FakeAdapter(), max_workers=1)
