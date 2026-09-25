@@ -41,8 +41,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   })
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { detail?: string } | null
-    throw new Error(body?.detail || `API request failed (${response.status})`)
+    const body = await response.json().catch(() => null) as { detail?: string; message?: string; details?: Array<{ field: string; message: string }> } | null
+    const details = body?.details?.map((item) => `${item.field}: ${item.message}`).join('; ')
+    throw new Error(details || body?.message || body?.detail || `API request failed (${response.status})`)
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>

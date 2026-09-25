@@ -108,6 +108,8 @@ def delete_device(name: str) -> Response:
 @app.post("/api/check")
 def check_devices(request: CheckRequest) -> list[dict[str, object]]:
     config = store.load()
+    if request.device_name and not any(device.name == request.device_name for device in config.devices):
+        raise HTTPException(status_code=404, detail="device not found")
     return [result.model_dump(mode="json") for result in check_service.check(config, request.device_name)]
 
 

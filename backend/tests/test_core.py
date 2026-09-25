@@ -3,10 +3,48 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
 from time import sleep
+from unittest.mock import patch
 
 from app.check_service import CheckService
 from app.modbus_adapter import ModbusTcpAdapter
 from app.schemas import CheckResult, DeviceConfig, SiteConfig
+
+
+class FakeResponse:
+    def __init__(self, bits: list[bool] | None = None, registers: list[int] | None = None) -> None:
+        self.bits = bits or []
+        self.registers = registers or []
+
+    def isError(self) -> bool:
+        return False
+
+
+class FakeClient:
+    def __init__(self, response: FakeResponse) -> None:
+        self.response = response
+        self.calls: list[str] = []
+
+    def connect(self) -> bool:
+        return True
+
+    def close(self) -> None:
+        return None
+
+    def read_coils(self, **_: object) -> FakeResponse:
+        self.calls.append("01")
+        return self.response
+
+    def read_discrete_inputs(self, **_: object) -> FakeResponse:
+        self.calls.append("02")
+        return self.response
+
+    def read_holding_registers(self, **_: object) -> FakeResponse:
+        self.calls.append("03")
+        return self.response
+
+    def read_input_registers(self, **_: object) -> FakeResponse:
+        self.calls.append("04")
+        return self.response
 
 
 class FakeAdapter:
@@ -37,6 +75,21 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(ModbusTcpAdapter._matches_expected([1, 2], "1, 2"))
         self.assertTrue(ModbusTcpAdapter._matches_expected([1, 2], "0..2"))
         self.assertFalse(ModbusTcpAdapter._matches_expected([1, 3], "1, 2"))
+
+    def test_read_function_codes_use_correct_requests_and_addresses(self) -> None:
+        responses = {
+            "01": FakeResponse(bits=[True, False]),
+            "02": FakeResponse(bits=[False, True]),
+            "03": FakeResponse(registers=[10, 11]),
+            "04": FakeResponse(registers=[20, 21]),
+        }
+        for function, expected_address in (("01", 1), ("02", 10001), ("03", 40001), ("04", 30001)):
+            client = FakeClient(responses[function])
+            device = DeviceConfig(name=f"PLC-{function}", ip="127.0.0.1", function=function)
+            with patch("app.modbus_adapter.ModbusTcpClient", return_value=client):
+                result = ModbusTcpAdapter().check_device(device)
+            self.assertEqual(client.calls, [function])
+            self.assertEqual(result.plc_address, expected_address)
 
     def test_polling_updates_status_and_stops(self) -> None:
         config = SiteConfig(

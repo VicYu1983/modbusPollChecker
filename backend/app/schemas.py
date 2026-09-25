@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, field_validator
+from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, field_validator, model_validator
 
 
 FunctionCode = Literal["01", "02", "03", "04"]
@@ -19,7 +19,7 @@ class DeviceConfig(BaseModel):
     port: int = Field(default=502, ge=1, le=65535)
     unit_id: int = Field(default=1, ge=0, le=247)
     address: int = Field(default=0, ge=0)
-    quantity: int = Field(default=1, ge=1, le=125)
+    quantity: int = Field(default=1, ge=1, le=2000)
     function: FunctionCode = "03"
     expected: str | None = None
     address_mode: AddressMode = "dec"
@@ -35,6 +35,12 @@ class DeviceConfig(BaseModel):
         if not value.strip():
             raise ValueError("name must not be blank")
         return value.strip()
+
+    @model_validator(mode="after")
+    def validate_register_quantity(self) -> "DeviceConfig":
+        if self.function in {"03", "04"} and self.quantity > 125:
+            raise ValueError("quantity must be between 1 and 125 for register reads")
+        return self
 
 
 class SiteConfig(BaseModel):
