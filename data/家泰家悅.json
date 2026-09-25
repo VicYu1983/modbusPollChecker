@@ -1,5 +1,70 @@
 {
   "schema_version": 1,
   "site_name": "家泰家悅",
-  "devices": []
+  "devices": [
+    {
+      "name": "空調閘道器",
+      "ip": "192.168.9.116",
+      "port": 8887,
+      "unit_id": 1,
+      "address": 0,
+      "quantity": 1,
+      "function": "04",
+      "expected": null,
+      "address_mode": "dec",
+      "connect_timeout_ms": 3000,
+      "response_timeout_ms": 1000,
+      "scan_rate_ms": 0,
+      "delay_between_polls_ms": 20,
+      "enabled": true
+    },
+    {
+      "name": "空調閘道器-2",
+      "ip": "192.168.9.116",
+      "port": 8887,
+      "unit_id": 2,
+      "address": 0,
+      "quantity": 1,
+      "function": "04",
+      "expected": null,
+      "address_mode": "dec",
+      "connect_timeout_ms": 3000,
+      "response_timeout_ms": 1000,
+      "scan_rate_ms": 0,
+      "delay_between_polls_ms": 20,
+      "enabled": true
+    },
+    {
+      "name": "消防閘道器",
+      "ip": "192.168.0.50",
+      "port": 8887,
+      "unit_id": 1,
+      "address": 0,
+      "quantity": 1,
+      "function": "04",
+      "expected": null,
+      "address_mode": "dec",
+      "connect_timeout_ms": 3000,
+      "response_timeout_ms": 1000,
+      "scan_rate_ms": 0,
+      "delay_between_polls_ms": 20,
+      "enabled": true
+    },
+    {
+      "name": "網路IO模組",
+      "ip": "192.168.9.115",
+      "port": 502,
+      "unit_id": 1,
+      "address": 0,
+      "quantity": 1,
+      "function": "02",
+      "expected": null,
+      "address_mode": "dec",
+      "connect_timeout_ms": 3000,
+      "response_timeout_ms": 1000,
+      "scan_rate_ms": 0,
+      "delay_between_polls_ms": 20,
+      "enabled": true
+    }
+  ]
 }
