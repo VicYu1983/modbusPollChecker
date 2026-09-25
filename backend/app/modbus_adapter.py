@@ -11,7 +11,7 @@ from .schemas import CheckResult, DeviceConfig
 class ModbusTcpAdapter:
     def check_device(self, device: DeviceConfig) -> CheckResult:
         started = perf_counter()
-        values: list[int] = []
+        values: list[int | bool] = []
         status = "FAIL"
         error_type: str | None = None
         error_message: str | None = None
@@ -25,7 +25,19 @@ class ModbusTcpAdapter:
                 error_type = "CONNECTION_FAILED"
                 error_message = "connection failed"
             else:
-                if device.function == "03":
+                if device.function == "01":
+                    response = client.read_coils(
+                        address=device.address,
+                        count=device.quantity,
+                        device_id=device.unit_id,
+                    )
+                elif device.function == "02":
+                    response = client.read_discrete_inputs(
+                        address=device.address,
+                        count=device.quantity,
+                        device_id=device.unit_id,
+                    )
+                elif device.function == "03":
                     response = client.read_holding_registers(
                         address=device.address,
                         count=device.quantity,
@@ -41,7 +53,11 @@ class ModbusTcpAdapter:
                     error_type = "MODBUS_EXCEPTION"
                     error_message = str(response)
                 else:
-                    values = list(response.registers)
+                    values = (
+                        list(response.bits[:device.quantity])
+                        if device.function in {"01", "02"}
+                        else list(response.registers)
+                    )
                     status = "PASS" if self._matches_expected(values, device.expected) else "FAIL"
                     if status == "FAIL" and device.expected:
                         error_type = "UNEXPECTED_VALUE"
@@ -75,13 +91,17 @@ class ModbusTcpAdapter:
 
     @staticmethod
     def _plc_address(device: DeviceConfig) -> int:
-        return (40001 if device.function == "03" else 30001) + device.address
+        base_addresses = {"01": 1, "02": 10001, "03": 40001, "04": 30001}
+        return base_addresses[device.function] + device.address
 
     @staticmethod
-    def _matches_expected(values: list[int], expected: str | None) -> bool:
+    def _matches_expected(values: list[int | bool], expected: str | None) -> bool:
         if not expected:
             return True
         expected = expected.strip()
+        if values and all(isinstance(value, bool) for value in values):
+            expected_values = [value.strip().lower() for value in expected.split(",")]
+            return values == [value in {"true", "1", "on"} for value in expected_values]
         if ".." in expected:
             lower, upper = (int(value.strip()) for value in expected.split("..", 1))
             return all(lower <= value <= upper for value in values)

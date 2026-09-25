@@ -5,7 +5,7 @@ export type DeviceConfig = {
   unit_id: number
   address: number
   quantity: number
-  function: '03' | '04'
+  function: '01' | '02' | '03' | '04'
   expected: string | null
   address_mode: 'dec' | 'hex'
   connect_timeout_ms: number

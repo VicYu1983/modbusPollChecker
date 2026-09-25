@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, field_validator
 
 
-FunctionCode = Literal["03", "04"]
+FunctionCode = Literal["01", "02", "03", "04"]
 AddressMode = Literal["dec", "hex"]
 Status = Literal["PASS", "FAIL", "TIMEOUT", "CONFIG_ERROR", "UNKNOWN"]
 
@@ -71,7 +71,7 @@ class CheckResult(BaseModel):
     address: int
     plc_address: int
     quantity: int
-    values: list[int] = Field(default_factory=list)
+    values: list[int | bool] = Field(default_factory=list)
     elapsed_ms: int = Field(ge=0)
     error_type: str | None = None
     error_message: str | None = None
