@@ -249,9 +249,10 @@ function Dashboard() {
         if (cancelled) return;
         setBatchDetail(detail);
         if (detail.batch.status === "completed" || detail.batch.status === "failed") {
-          setActiveBatchId(null);
           const history = await api.listBatches(siteName);
-          if (!cancelled) setBatches(history.items);
+          if (cancelled) return;
+          setBatches(history.items);
+          setActiveBatchId(null);
           return;
         }
       } catch {
@@ -325,6 +326,7 @@ function Dashboard() {
     try {
       const batch = await api.createBatch(siteName);
       setBatchDetail({ batch, records: [], completed_device_count: 0 });
+      setBatches((current) => [batch, ...current.filter((item) => item.id !== batch.id)]);
       setActiveBatchId(batch.id);
       message.info("回歸檢查已開始");
     } catch (error) {
