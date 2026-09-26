@@ -1,27 +1,51 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
 from .check_service import CheckService
-from .schemas import CheckRequest, DeviceConfig, ErrorResponse, SiteConfig
+from .domain.models import BatchDetailResponse, BatchListResponse, CheckBatch
+from .repositories.sqlite_history import SqliteHistoryRepository
+from .schemas import (
+    BatchCreateRequest,
+    CheckRequest,
+    DeviceConfig,
+    ErrorResponse,
+    SiteConfig,
+)
+from .services.batch_service import BatchAlreadyRunningError, BatchService
 from .site_store import SiteStore
 
 
 ROOT = Path(__file__).resolve().parents[2]
 store = SiteStore(ROOT / "data")
 check_service = CheckService()
+history = SqliteHistoryRepository(
+    Path(
+        os.environ.get(
+            "MODBUS_HISTORY_DB",
+            str(ROOT / "backend" / "data" / "modbus_history.db"),
+        )
+    )
+)
+batch_service = BatchService(history, check_service.adapter)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    yield
-    check_service.shutdown()
+    history.initialize()
+    history.fail_interrupted_batches()
+    try:
+        yield
+    finally:
+        batch_service.shutdown()
+        check_service.shutdown()
 
 
 app = FastAPI(title="Modbus Poll Checker API", version="0.1.0", lifespan=lifespan)
@@ -118,6 +142,63 @@ def check_devices(request: CheckRequest) -> list[dict[str, object]]:
     if request.device_name and not any(device.name == request.device_name for device in config.devices):
         raise HTTPException(status_code=404, detail="device not found")
     return [result.model_dump(mode="json") for result in check_service.check(config, request.device_name)]
+
+
+@app.post(
+    "/api/check/batches",
+    response_model=CheckBatch,
+    status_code=202,
+)
+def create_check_batch(request: BatchCreateRequest) -> CheckBatch:
+    try:
+        config = store.load(request.site_name)
+        if request.site_name and config.site_name != request.site_name:
+            raise HTTPException(status_code=404, detail="site not found")
+        polling_was_active = check_service.polling_status().active
+        if polling_was_active:
+            check_service.stop_polling()
+
+        def resume_polling() -> None:
+            if polling_was_active and request.resume_polling:
+                check_service.start_polling(store.load)
+
+        try:
+            return batch_service.start_batch(
+                config,
+                device_names=request.device_names,
+                note=request.note,
+                on_complete=resume_polling,
+            )
+        except Exception:
+            if polling_was_active and request.resume_polling:
+                check_service.start_polling(store.load)
+            raise
+    except BatchAlreadyRunningError as error:
+        raise HTTPException(status_code=409, detail="a check batch is already running") from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get("/api/check/batches", response_model=BatchListResponse)
+def list_check_batches(
+    site_name: str | None = None,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> BatchListResponse:
+    items, total = batch_service.list_batches(
+        site_name,
+        offset=offset,
+        limit=limit,
+    )
+    return BatchListResponse(items=items, total=total)
+
+
+@app.get("/api/check/batches/{batch_id}", response_model=BatchDetailResponse)
+def get_check_batch(batch_id: str) -> BatchDetailResponse:
+    try:
+        return batch_service.get_batch(batch_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="batch not found") from error
 
 
 @app.get("/api/status")

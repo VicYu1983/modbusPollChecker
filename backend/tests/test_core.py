@@ -98,7 +98,7 @@ class CoreTests(unittest.TestCase):
         config = SiteConfig(
             site_name="Test",
             devices=[
-                DeviceConfig(name="PLC-01", ip="127.0.0.1"),
+                DeviceConfig(name="PLC-01", ip="127.0.0.1", scan_rate_ms=1000),
             ],
         )
         service = CheckService(adapter=FakeAdapter(), max_workers=1)
@@ -109,6 +109,19 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(service.status()[0].device_name, "PLC-01")
             self.assertTrue(service.stop_polling())
             self.assertFalse(service.polling_status().active)
+        finally:
+            service.shutdown()
+
+    def test_polling_skips_devices_with_zero_scan_rate(self) -> None:
+        config = SiteConfig(
+            site_name="Test",
+            devices=[DeviceConfig(name="PLC-01", ip="127.0.0.1", scan_rate_ms=0)],
+        )
+        service = CheckService(adapter=FakeAdapter(), max_workers=1)
+        try:
+            self.assertTrue(service.start_polling(lambda: config))
+            sleep(0.05)
+            self.assertEqual(service.status(), [])
         finally:
             service.shutdown()
 

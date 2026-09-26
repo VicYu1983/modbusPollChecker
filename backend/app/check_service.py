@@ -9,8 +9,6 @@ from collections.abc import Callable
 from .modbus_adapter import ModbusTcpAdapter
 from .schemas import CheckResult, DeviceConfig, PollingStatus, SiteConfig
 
-DEFAULT_POLL_INTERVAL_MS = 1000
-
 
 class CheckService:
     def __init__(self, adapter: ModbusTcpAdapter | None = None, max_workers: int = 10) -> None:
@@ -80,7 +78,7 @@ class CheckService:
             now = monotonic()
             devices = [
                 device for device in config.devices
-                if device.enabled
+                if device.enabled and device.scan_rate_ms > 0
             ]
             active_names = {device.name for device in devices}
             next_due = {name: due for name, due in next_due.items() if name in active_names}
@@ -91,8 +89,7 @@ class CheckService:
                 self.check(config, device.name)
                 with self._lock:
                     self._last_poll_at = datetime.now(timezone.utc)
-                poll_interval_ms = device.scan_rate_ms or DEFAULT_POLL_INTERVAL_MS
-                next_due[device.name] = monotonic() + poll_interval_ms / 1000
+                next_due[device.name] = monotonic() + device.scan_rate_ms / 1000
                 if self._polling_stop.wait(device.delay_between_polls_ms / 1000):
                     return
 

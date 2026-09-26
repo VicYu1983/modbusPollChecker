@@ -8,4 +8,7 @@ frontend/node_modules/
 frontend/dist/
 
 data/site.json
+backend/data/*.db
+backend/data/*.db-*
+backend/data/reports/
 .vscode/

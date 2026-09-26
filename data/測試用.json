@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "site_name": "測試用",
+  "devices": [
+    {
+      "name": "水泵",
+      "ip": "127.0.0.1",
+      "port": 502,
+      "unit_id": 0,
+      "address": 0,
+      "quantity": 3,
+      "function": "01",
+      "expected": null,
+      "address_mode": "dec",
+      "connect_timeout_ms": 3000,
+      "response_timeout_ms": 1000,
+      "scan_rate_ms": 0,
+      "delay_between_polls_ms": 20,
+      "enabled": true
+    }
+  ]
+}

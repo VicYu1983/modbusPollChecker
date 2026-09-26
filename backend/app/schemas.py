@@ -87,6 +87,13 @@ class CheckRequest(BaseModel):
     device_name: str | None = None
 
 
+class BatchCreateRequest(BaseModel):
+    site_name: str | None = None
+    device_names: list[str] | None = None
+    note: str | None = Field(default=None, max_length=500)
+    resume_polling: bool = True
+
+
 class PollingStatus(BaseModel):
     active: bool
     started_at: datetime | None = None
