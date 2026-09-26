@@ -7,7 +7,6 @@ import {
   Card,
   Col,
   Form,
-  Input,
   Layout,
   Modal,
   Row,
@@ -21,10 +20,7 @@ import {
 } from "antd";
 import {
   DeleteOutlined,
-  FolderOpenOutlined,
   ReloadOutlined,
-  SaveOutlined,
-  ThunderboltOutlined,
 } from "@ant-design/icons";
 import {
   api,
@@ -38,6 +34,7 @@ import { DeviceEditor } from "./components/DeviceEditor";
 import { DeviceTable } from "./components/DeviceTable";
 import { deviceDefaults } from "./components/formDefaults";
 import { RegressionPanel } from "./components/RegressionPanel";
+import { SiteHeader } from "./components/SiteHeader";
 import "./App.css";
 
 function DeleteSavedSiteButton() {
@@ -574,56 +571,14 @@ function Dashboard() {
     });
   return (
     <Layout className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <div className="brand-mark">
-            <ThunderboltOutlined />
-          </div>
-          <div>
-            <Typography.Title level={4}>MODBUS / POLL CHECKER</Typography.Title>
-            <span className="eyebrow">FIELD CONNECTION CONSOLE</span>
-          </div>
-        </div>
-        <div className="site-switcher">
-          <span className="muted-label">目前案場</span>
-          <Input
-            value={siteName}
-            onChange={(e) => setSiteName(e.target.value)}
-            onBlur={saveSiteName}
-            onPressEnter={saveSiteName}
-            variant="borderless"
-          />
-        </div>
-        <div className="header-actions">
-          <Space size={6}>
-            <Tooltip title="儲存案場設定">
-              <Button
-                aria-label="儲存案場設定"
-                icon={<SaveOutlined />}
-                onClick={saveConfig}
-              />
-            </Tooltip>
-            <Tooltip title="讀取案場設定">
-              <Button
-                aria-label="讀取案場設定"
-                icon={<FolderOpenOutlined />}
-                onClick={readConfig}
-              />
-            </Tooltip>
-            <Tooltip title="清空目前設定">
-              <Button
-                danger
-                aria-label="清空目前設定"
-                icon={<DeleteOutlined />}
-                onClick={clearCurrentConfig}
-              />
-            </Tooltip>
-          </Space>
-        </div>
-        <div className="local-badge">
-          <span className="pulse" /> LOCAL INSTANCE
-        </div>
-      </header>
+      <SiteHeader
+        siteName={siteName}
+        onSiteNameChange={setSiteName}
+        onSiteNameSave={saveSiteName}
+        onSaveConfig={saveConfig}
+        onReadConfig={readConfig}
+        onClearConfig={clearCurrentConfig}
+      />
       <main className="workspace">
         <Tabs
           className="module-tabs"
