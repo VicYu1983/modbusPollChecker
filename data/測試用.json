@@ -14,7 +14,7 @@
       "address_mode": "dec",
       "connect_timeout_ms": 3000,
       "response_timeout_ms": 1000,
-      "scan_rate_ms": 0,
+      "scan_rate_ms": 20,
       "delay_between_polls_ms": 20,
       "enabled": true
     }

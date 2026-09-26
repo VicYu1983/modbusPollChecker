@@ -50,7 +50,11 @@ class FakeClient:
 
 
 class FakeAdapter:
+    def __init__(self) -> None:
+        self.checked_devices: list[str] = []
+
     def check_device(self, device: DeviceConfig) -> CheckResult:
+        self.checked_devices.append(device.name)
         return CheckResult(
             device_name=device.name,
             timestamp=datetime.now(timezone.utc),
@@ -68,6 +72,10 @@ class FakeAdapter:
 
 
 class CoreTests(unittest.TestCase):
+    def test_device_scan_rate_defaults_to_one_second(self) -> None:
+        device = DeviceConfig(name="PLC-01", ip="127.0.0.1")
+        self.assertEqual(device.scan_rate_ms, 1000)
+
     def test_site_rejects_duplicate_device_names(self) -> None:
         device = {"name": "PLC-01", "ip": "127.0.0.1"}
         with self.assertRaises(ValueError):
@@ -112,16 +120,19 @@ class CoreTests(unittest.TestCase):
         finally:
             service.shutdown()
 
-    def test_polling_skips_devices_with_zero_scan_rate(self) -> None:
+    def test_polling_rechecks_devices_with_zero_scan_rate(self) -> None:
         config = SiteConfig(
             site_name="Test",
             devices=[DeviceConfig(name="PLC-01", ip="127.0.0.1", scan_rate_ms=0)],
         )
-        service = CheckService(adapter=FakeAdapter(), max_workers=1)
+        adapter = FakeAdapter()
+        service = CheckService(adapter=adapter, max_workers=1)
         try:
-            self.assertTrue(service.start_polling(lambda: config))
-            sleep(0.05)
-            self.assertEqual(service.status(), [])
+            with patch("app.check_service.DEFAULT_POLL_INTERVAL_MS", 10):
+                self.assertTrue(service.start_polling(lambda: config))
+                sleep(0.05)
+                self.assertGreaterEqual(adapter.checked_devices.count("PLC-01"), 2)
+                self.assertEqual(service.status()[0].device_name, "PLC-01")
         finally:
             service.shutdown()
 

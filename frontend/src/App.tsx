@@ -60,7 +60,7 @@ const defaults = {
   address_mode: "dec" as const,
   connect_timeout_ms: 3000,
   response_timeout_ms: 1000,
-  scan_rate_ms: 0,
+  scan_rate_ms: 1000,
   delay_between_polls_ms: 20,
   enabled: true,
 };
@@ -199,7 +199,7 @@ function Dashboard() {
   }, []);
   useEffect(() => {
     if (!pollingActive) return;
-    const timer = window.setInterval(() => {
+    const refreshStatus = () => {
       api
         .getStatus()
         .then((results) =>
@@ -213,7 +213,9 @@ function Dashboard() {
           )
         )
         .catch(() => undefined);
-    }, 1000);
+      };
+      refreshStatus();
+      const timer = window.setInterval(refreshStatus, 1000);
     return () => window.clearInterval(timer);
   }, [pollingActive]);
   const runCheck = async (target?: Device) => {

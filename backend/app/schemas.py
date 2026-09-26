@@ -25,7 +25,7 @@ class DeviceConfig(BaseModel):
     address_mode: AddressMode = "dec"
     connect_timeout_ms: int = Field(default=3000, gt=0)
     response_timeout_ms: int = Field(default=1000, gt=0)
-    scan_rate_ms: int = Field(default=0, ge=0)
+    scan_rate_ms: int = Field(default=1000, ge=0)
     delay_between_polls_ms: int = Field(default=20, ge=0)
     enabled: bool = True
 
