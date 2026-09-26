@@ -17,6 +17,7 @@ import {
   Space,
   Statistic,
   Switch,
+  Tabs,
   Table,
   Tag,
   Typography,
@@ -148,6 +149,7 @@ function DeleteSavedSiteButton() {
 
 function Dashboard() {
   const batchPageSize = 25;
+  const [activeModule, setActiveModule] = useState("connection");
   const [siteName, setSiteName] = useState("未命名案場");
   const [devices, setDevices] = useState<Device[]>([]);
   const [editing, setEditing] = useState<Device | null>(null);
@@ -767,6 +769,17 @@ function Dashboard() {
         </div>
       </header>
       <main className="workspace">
+        <Tabs
+          className="module-tabs"
+          activeKey={activeModule}
+          onChange={setActiveModule}
+          items={[
+            { key: "connection", label: "連線狀況" },
+            { key: "regression", label: "回歸測試" },
+          ]}
+        />
+        {activeModule === "connection" && (
+          <>
         <section className="intro">
           <div>
             <span className="section-kicker">01 / CONNECTION CONTROL</span>
@@ -994,6 +1007,19 @@ function Dashboard() {
             </Form>
           </Card>
         </section>
+          </>
+        )}
+        {activeModule === "regression" && (
+          <>
+        <section className="intro">
+          <div>
+            <span className="section-kicker">02 / REGRESSION TESTING</span>
+            <Typography.Title>回歸測試總覽</Typography.Title>
+            <Typography.Paragraph>
+              設定案場基準，追蹤每次檢查結果與設備狀態變化。
+            </Typography.Paragraph>
+          </div>
+        </section>
         <section className="batch-history">
           <Card
             bordered={false}
@@ -1105,6 +1131,8 @@ function Dashboard() {
             </Card>
           )}
         </section>
+          </>
+        )}
       </main>
     </Layout>
   );
