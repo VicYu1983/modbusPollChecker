@@ -26,7 +26,6 @@ import {
 } from "antd";
 import {
   DeleteOutlined,
-  EditOutlined,
   FolderOpenOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -42,16 +41,11 @@ import {
   type DeviceConfig,
   type SiteBaseline,
 } from "./api/client";
-import { toConfig, toDevice, type Device, type DeviceStatus } from "./api/mappers";
+import { toConfig, toDevice, type Device } from "./api/mappers";
+import { DeviceTable } from "./components/DeviceTable";
+import { statusMeta } from "./components/deviceMeta";
 import "./App.css";
 
-const statusMeta: Record<DeviceStatus, { label: string; color: string }> = {
-  PASS: { label: "正常", color: "success" },
-  FAIL: { label: "失敗", color: "error" },
-  TIMEOUT: { label: "逾時", color: "warning" },
-  CONFIG_ERROR: { label: "設定錯誤", color: "error" },
-  UNKNOWN: { label: "未檢查", color: "default" },
-};
 const comparisonMeta: Record<ComparisonStatus, { label: string; color: string }> = {
   UNCHANGED_PASS: { label: "維持正常", color: "success" },
   UNCHANGED_FAILURE: { label: "異常仍存在", color: "error" },
@@ -619,89 +613,6 @@ function Dashboard() {
         }
       },
     });
-  const columns = [
-    {
-      title: "設備",
-      dataIndex: "name",
-      key: "name",
-      render: (name: string, d: Device) => (
-        <div className="device-name">
-          <strong>{name}</strong>
-          <span>
-            {d.ip}:{d.port}
-          </span>
-        </div>
-      ),
-    },
-    {
-      title: "讀取設定",
-      key: "definition",
-      render: (_: unknown, d: Device) => (
-        <span className="definition">
-          FC {d.function} · {d.address === 0 ? "40001" : d.address} ·{" "}
-          {d.quantity} 筆
-        </span>
-      ),
-    },
-    {
-      title: "Unit ID",
-      dataIndex: "unit_id",
-      key: "unit_id",
-    },
-    {
-      title: "狀態",
-      dataIndex: "status",
-      key: "status",
-      render: (status: DeviceStatus, d: Device) => (
-        <div>
-          <Tag color={statusMeta[status].color}>{statusMeta[status].label}</Tag>
-          <span className="status-detail">{d.error || d.lastChecked}</span>
-        </div>
-      ),
-    },
-    {
-      title: "值",
-      dataIndex: "values",
-      key: "values",
-      render: (values?: Array<number | boolean>) =>
-        values?.length ? values.join(", ") : "—",
-    },
-    {
-      title: "耗時",
-      dataIndex: "elapsedMs",
-      key: "elapsedMs",
-      render: (value?: number) => (value ? `${value} ms` : "—"),
-    },
-    {
-      title: "",
-      key: "actions",
-      align: "right" as const,
-      render: (_: unknown, d: Device) => (
-        <Space size={4}>
-          <Button
-            type="text"
-            icon={<ReloadOutlined />}
-            loading={checking}
-            onClick={() => runCheck(d)}
-            aria-label={`檢查 ${d.name}`}
-          />
-          <Button
-            type="text"
-            icon={<EditOutlined />}
-            onClick={() => openEdit(d)}
-            aria-label={`編輯 ${d.name}`}
-          />
-          <Button
-            type="text"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => remove(d)}
-            aria-label={`刪除 ${d.name}`}
-          />
-        </Space>
-      ),
-    },
-  ];
   const batchColumns = [
     {
       title: "檢查時間",
@@ -998,16 +909,12 @@ function Dashboard() {
               title={pollingActive ? "自動檢查中" : "目前為本機模式"}
               description="檢查請求會由本機 Python API 轉送至現場設備。"
             />
-            <Table
-              rowKey="name"
-              columns={columns}
-              dataSource={devices}
-              pagination={{
-                pageSize: 50,
-                hideOnSinglePage: true,
-                showSizeChanger: false,
-              }}
-              scroll={{ x: 700 }}
+            <DeviceTable
+              devices={devices}
+              checking={checking}
+              onCheck={(device) => void runCheck(device)}
+              onEdit={openEdit}
+              onRemove={remove}
             />
           </Card>
           <Card
