@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Iterator
 
 from ..domain.models import BatchCounts, BatchStatus, CheckBatch, CheckRecord, SiteBaseline
-from ..ports.history import BatchNotFoundError
+from ..ports.history import (
+    BatchIsBaselineError,
+    BatchNotDeletableError,
+    BatchNotFoundError,
+)
 from ..schemas import CheckResult, DeviceConfig, SiteConfig
 
 
@@ -152,6 +156,25 @@ class SqliteHistoryRepository:
                 (*parameters, limit, offset),
             ).fetchall()
         return [self._batch_from_row(row) for row in rows], total
+
+    def delete_batch(self, batch_id: str) -> None:
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT status FROM check_batches WHERE id = ?", (batch_id,)
+            ).fetchone()
+            if row is None:
+                raise BatchNotFoundError(batch_id)
+            baseline = connection.execute(
+                "SELECT 1 FROM site_baselines WHERE baseline_batch_id = ? LIMIT 1",
+                (batch_id,),
+            ).fetchone()
+            if baseline is not None:
+                raise BatchIsBaselineError("目前基準批次不可刪除，請先清除基準")
+            if row["status"] in {"pending", "running"}:
+                raise BatchNotDeletableError("執行中的批次不可刪除")
+            connection.execute("DELETE FROM check_records WHERE batch_id = ?", (batch_id,))
+            connection.execute("DELETE FROM check_batches WHERE id = ?", (batch_id,))
 
     def save_record(self, record: CheckRecord) -> None:
         with self._connection() as connection:

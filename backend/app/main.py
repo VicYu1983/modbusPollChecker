@@ -30,6 +30,12 @@ from .schemas import (
     SiteConfig,
 )
 from .services.batch_service import BatchAlreadyRunningError, BatchService
+from .ports.history import (
+    BatchIsBaselineError,
+    BatchNotDeletableError,
+    BatchNotFoundError,
+)
+from .services.batch_service import BatchAlreadyRunningError, BatchService
 from .services.comparison_service import (
     BaselineRequiresConfirmationError,
     ComparisonService,
@@ -224,6 +230,17 @@ def get_check_batch(batch_id: str) -> BatchDetailResponse:
         return batch_service.get_batch(batch_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail="batch not found") from error
+
+
+@app.delete("/api/check/batches/{batch_id}", status_code=204)
+def delete_check_batch(batch_id: str) -> Response:
+    try:
+        batch_service.delete_batch(batch_id)
+    except BatchNotFoundError as error:
+        raise HTTPException(status_code=404, detail="batch not found") from error
+    except (BatchIsBaselineError, BatchNotDeletableError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return Response(status_code=204)
 
 
 @app.post("/api/check/batches/{batch_id}/cancel", response_model=CheckBatch)

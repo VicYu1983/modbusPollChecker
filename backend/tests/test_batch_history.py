@@ -7,6 +7,7 @@ from pathlib import Path
 from threading import Event
 
 from app.domain.models import CheckBatch, CheckRecord
+from app.ports.history import BatchIsBaselineError, BatchNotDeletableError
 from app.repositories.sqlite_history import SqliteHistoryRepository
 from app.schemas import CheckResult, DeviceConfig, SiteConfig
 from app.services.batch_service import BatchService
@@ -168,6 +169,39 @@ class BatchHistoryTests(unittest.TestCase):
         self.assertEqual(total, 1)
         self.assertEqual(other_batches, [])
         self.assertEqual(other_total, 0)
+
+    def test_delete_batch_removes_its_records(self) -> None:
+        batch = self._batch().model_copy(update={"status": "completed"})
+        device = batch.config_snapshot.devices[0]
+        self.repository.create_batch(batch)
+        self.repository.save_record(
+            CheckRecord(
+                batch_id=batch.id,
+                result=PassingChecker().check_device(device),
+                device_snapshot=device,
+            )
+        )
+
+        self.repository.delete_batch(batch.id)
+
+        with self.assertRaises(LookupError):
+            self.repository.get_batch(batch.id)
+        self.assertEqual(self.repository.list_records(batch.id), [])
+
+    def test_delete_batch_rejects_baseline_and_running_batches(self) -> None:
+        baseline = self._batch().model_copy(update={"status": "completed"})
+        self.repository.create_batch(baseline)
+        self.repository.set_baseline(baseline.site_name, baseline.id)
+
+        with self.assertRaises(BatchIsBaselineError):
+            self.repository.delete_batch(baseline.id)
+        self.assertEqual(self.repository.get_batch(baseline.id).status, "completed")
+
+        running = self._batch().model_copy(update={"id": "batch-running", "status": "running"})
+        self.repository.create_batch(running)
+        with self.assertRaises(BatchNotDeletableError):
+            self.repository.delete_batch(running.id)
+        self.assertEqual(self.repository.get_batch(running.id).status, "running")
 
     def test_cancelling_batch_stops_queued_device_checks(self) -> None:
         checker = BlockingChecker()

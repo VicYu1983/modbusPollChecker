@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi import HTTPException
+
 from app import main
 from app.repositories.sqlite_history import SqliteHistoryRepository
 from app.schemas import BatchCreateRequest, CheckResult, DeviceConfig, SiteConfig
@@ -65,6 +67,7 @@ class BatchApiTests(unittest.TestCase):
                         offset=0,
                         limit=50,
                     )
+                    response = main.delete_check_batch(batch.id)
             finally:
                 service.shutdown()
 
@@ -74,6 +77,30 @@ class BatchApiTests(unittest.TestCase):
             self.assertEqual(detail.records[0].result.status, "PASS")
             self.assertEqual(batches.total, 1)
             self.assertEqual(batches.items[0].id, batch.id)
+            self.assertEqual(response.status_code, 204)
+
+    def test_delete_baseline_batch_returns_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            repository = SqliteHistoryRepository(root / "history.db")
+            repository.initialize()
+            service = BatchService(repository, PassingChecker(), max_workers=1)
+            config = SiteConfig(
+                site_name="Test Site",
+                devices=[DeviceConfig(name="PLC-01", ip="127.0.0.1")],
+            )
+            batch = service.start_batch(config)
+            service.shutdown()
+            repository.set_baseline(batch.site_name, batch.id)
+
+            try:
+                with patch.multiple(main, history=repository, batch_service=service):
+                    with self.assertRaises(HTTPException) as raised:
+                        main.delete_check_batch(batch.id)
+            finally:
+                service.shutdown()
+
+            self.assertEqual(raised.exception.status_code, 409)
 
 
 if __name__ == "__main__":

@@ -219,6 +219,9 @@ class BatchService:
             limit=limit,
         )
 
+    def delete_batch(self, batch_id: str) -> None:
+        self.history.delete_batch(batch_id)
+
     @staticmethod
     def _error_result(device: DeviceConfig, error: Exception) -> CheckResult:
         base_addresses = {"01": 1, "02": 10001, "03": 40001, "04": 30001}

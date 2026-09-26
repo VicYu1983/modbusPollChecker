@@ -165,6 +165,7 @@ function Dashboard() {
   const [checking, setChecking] = useState(false);
   const [pollingActive, setPollingActive] = useState(false);
   const [batches, setBatches] = useState<CheckBatch[]>([]);
+  const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
   const [batchPage, setBatchPage] = useState(1);
   const [batchTotal, setBatchTotal] = useState(0);
   const [baseline, setBaseline] = useState<SiteBaseline | null>(null);
@@ -418,6 +419,82 @@ function Dashboard() {
     } finally {
       setCancellingBatchId(null);
     }
+  };
+  const deleteBatches = (batchIds: string[]) => {
+    if (!batchIds.length) return;
+    Modal.confirm({
+      title: batchIds.length === 1 ? "刪除檢查批次" : "清理歷史批次",
+      content: `確定刪除 ${batchIds.length} 個批次及其檢查結果？此操作無法復原。`,
+      okText: "刪除",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        const results = await Promise.allSettled(
+          batchIds.map((id) => api.deleteBatch(id))
+        );
+        const deletedIds = batchIds.filter(
+          (_, index) => results[index].status === "fulfilled"
+        );
+        const failedCount = results.length - deletedIds.length;
+        setSelectedBatchIds([]);
+        if (deletedIds.length) {
+          setBatchDetail((current) =>
+            current && deletedIds.includes(current.batch.id) ? null : current
+          );
+          const nextPage =
+            batches.length <= deletedIds.length && batchPage > 1
+              ? batchPage - 1
+              : batchPage;
+          if (nextPage !== batchPage) {
+            setBatchPage(nextPage);
+          } else {
+            try {
+              const history = await api.listBatches(
+                siteName,
+                (batchPage - 1) * batchPageSize,
+                batchPageSize
+              );
+              setBatches(history.items);
+              setBatchTotal(history.total);
+            } catch {
+              setBatches((current) =>
+                current.filter((batch) => !deletedIds.includes(batch.id))
+              );
+              setBatchTotal((total) => Math.max(0, total - deletedIds.length));
+            }
+          }
+        }
+        if (failedCount) {
+          message.error(
+            `${deletedIds.length} 個批次已刪除，${failedCount} 個刪除失敗；基準批次請先清除基準。`
+          );
+        } else {
+          message.success(`已刪除 ${deletedIds.length} 個批次及其檢查結果`);
+        }
+      },
+    });
+  };
+  const clearCurrentBaseline = () => {
+    if (!baseline) return;
+    Modal.confirm({
+      title: "清除案場基準",
+      content: "清除基準不會刪除批次資料；之後可重新指定基準。",
+      okText: "清除基準",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          await api.clearBaseline(siteName);
+          setBaseline(null);
+          setSelectedBatchIds((current) =>
+            current.filter((id) => id !== baseline.baseline_batch_id)
+          );
+          message.success("案場基準已清除");
+        } catch (error) {
+          message.error(error instanceof Error ? error.message : "基準清除失敗");
+          throw error;
+        }
+      },
+    });
   };
   const submit = async () => {
     const values = (await form.validateFields()) as DeviceConfig;
@@ -736,6 +813,28 @@ function Dashboard() {
           >
             HTML
           </Button>
+          <Tooltip
+            title={
+              baseline?.baseline_batch_id === batch.id
+                ? "請先清除案場基準"
+                : batch.status === "pending" || batch.status === "running"
+                  ? "執行中的批次不可刪除"
+                  : "刪除批次及檢查結果"
+            }
+          >
+            <Button
+              type="text"
+              danger
+              aria-label={`刪除批次 ${batch.id}`}
+              icon={<DeleteOutlined />}
+              disabled={
+                batch.status === "pending" ||
+                batch.status === "running" ||
+                baseline?.baseline_batch_id === batch.id
+              }
+              onClick={() => deleteBatches([batch.id])}
+            />
+          </Tooltip>
         </Space>
       ),
     },
@@ -1117,6 +1216,13 @@ function Dashboard() {
                   ? `基準批次 ${baseline.baseline_batch_id}；檢查完成後可比較本次結果。`
                   : "先完成一次全案場檢查，再從批次歷史將合格批次設為基準。"
               }
+              action={
+                baseline ? (
+                  <Button size="small" onClick={clearCurrentBaseline}>
+                    清除基準
+                  </Button>
+                ) : null
+              }
               style={{ marginBottom: 16 }}
             />
             {batchDetail && (
@@ -1197,16 +1303,39 @@ function Dashboard() {
                 />
               </div>
             )}
+            <Space style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                disabled={!selectedBatchIds.length}
+                onClick={() => deleteBatches(selectedBatchIds)}
+              >
+                刪除所選 ({selectedBatchIds.length})
+              </Button>
+            </Space>
             <Table
               rowKey="id"
               columns={batchColumns}
               dataSource={batches}
+              rowSelection={{
+                selectedRowKeys: selectedBatchIds,
+                onChange: (keys) => setSelectedBatchIds(keys.map(String)),
+                getCheckboxProps: (batch) => ({
+                  disabled:
+                    batch.status === "pending" ||
+                    batch.status === "running" ||
+                    baseline?.baseline_batch_id === batch.id,
+                }),
+              }}
               pagination={{
                 current: batchPage,
                 pageSize: batchPageSize,
                 total: batchTotal,
                 hideOnSinglePage: true,
-                onChange: (page) => setBatchPage(page),
+                onChange: (page) => {
+                  setSelectedBatchIds([]);
+                  setBatchPage(page);
+                },
               }}
               size="small"
               scroll={{ x: 720 }}

@@ -163,6 +163,10 @@ export const api = {
     `/api/check/batches/${encodeURIComponent(batchId)}/cancel`,
     { method: 'POST' },
   ),
+  deleteBatch: (batchId: string) => request<void>(
+    `/api/check/batches/${encodeURIComponent(batchId)}`,
+    { method: 'DELETE' },
+  ),
   getComparison: (batchId: string) => request<BatchComparison>(`/api/check/batches/${encodeURIComponent(batchId)}/comparison`),
   getReportUrl: (batchId: string, format: 'csv' | 'html') =>
     `/api/check/batches/${encodeURIComponent(batchId)}/report?format=${format}`,
@@ -170,5 +174,9 @@ export const api = {
   setBaseline: (siteName: string, batchId: string, force: boolean) => request<SiteBaseline>(
     `/api/sites/${encodeURIComponent(siteName)}/baseline`,
     { method: 'PUT', body: JSON.stringify({ batch_id: batchId, force }) },
+  ),
+  clearBaseline: (siteName: string) => request<void>(
+    `/api/sites/${encodeURIComponent(siteName)}/baseline`,
+    { method: 'DELETE' },
   ),
 }

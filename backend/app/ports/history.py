@@ -14,6 +14,10 @@ class BatchIsBaselineError(ValueError):
     pass
 
 
+class BatchNotDeletableError(ValueError):
+    pass
+
+
 class HistoryRepository(Protocol):
     def initialize(self) -> None: ...
 
@@ -38,6 +42,8 @@ class HistoryRepository(Protocol):
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[list[CheckBatch], int]: ...
+
+    def delete_batch(self, batch_id: str) -> None: ...
 
     def save_record(self, record: CheckRecord) -> None: ...
 
