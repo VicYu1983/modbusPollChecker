@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Event
 
 from app.domain.models import CheckBatch, CheckRecord
 from app.repositories.sqlite_history import SqliteHistoryRepository
@@ -27,6 +28,19 @@ class PassingChecker:
             values=[10],
             elapsed_ms=3,
         )
+
+
+class BlockingChecker(PassingChecker):
+    def __init__(self) -> None:
+        self.started = Event()
+        self.release = Event()
+        self.calls = 0
+
+    def check_device(self, device: DeviceConfig) -> CheckResult:
+        self.calls += 1
+        self.started.set()
+        self.release.wait(timeout=2)
+        return super().check_device(device)
 
 
 class BatchHistoryTests(unittest.TestCase):
@@ -103,6 +117,81 @@ class BatchHistoryTests(unittest.TestCase):
         self.assertEqual(total, 1)
         self.assertEqual(other_batches, [])
         self.assertEqual(other_total, 0)
+
+    def test_cancelling_batch_stops_queued_device_checks(self) -> None:
+        checker = BlockingChecker()
+        service = BatchService(self.repository, checker, max_workers=1)
+        config = SiteConfig(
+            site_name="Test Site",
+            devices=[
+                DeviceConfig(name=f"PLC-{index}", ip=f"127.0.0.{index}")
+                for index in range(1, 4)
+            ],
+        )
+        try:
+            batch = service.start_batch(config)
+            self.assertTrue(checker.started.wait(timeout=1))
+            self.assertTrue(service.cancel_batch(batch.id))
+            checker.release.set()
+        finally:
+            checker.release.set()
+            service.shutdown()
+
+        cancelled = self.repository.get_batch(batch.id)
+        self.assertEqual(cancelled.status, "cancelled")
+        self.assertEqual(checker.calls, 1)
+        self.assertEqual(len(self.repository.list_records(batch.id)), 1)
+
+    def test_v1_database_migration_preserves_records_and_baseline(self) -> None:
+        legacy_path = Path(self.temporary_directory.name) / "legacy.db"
+        repository = SqliteHistoryRepository(legacy_path)
+        with legacy_path.open("wb"):
+            pass
+        import sqlite3
+
+        connection = sqlite3.connect(legacy_path)
+        try:
+            connection.executescript(
+                (repository.migrations_path / "0001_init.sql").read_text(encoding="utf-8")
+            )
+            connection.execute(
+                "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+            )
+            connection.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (1, ?)",
+                (datetime.now(timezone.utc).isoformat(),),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        batch = self._batch()
+        repository.create_batch(batch)
+        device = batch.config_snapshot.devices[0]
+        result = PassingChecker().check_device(device)
+        repository.save_record(
+            CheckRecord(batch_id=batch.id, result=result, device_snapshot=device)
+        )
+        repository.set_baseline(batch.site_name, batch.id)
+
+        repository.initialize()
+        repository.update_batch_status(
+            batch.id,
+            "cancelled",
+            completed_at=datetime.now(timezone.utc),
+        )
+
+        self.assertEqual(repository.get_batch(batch.id).status, "cancelled")
+        self.assertEqual(len(repository.list_records(batch.id)), 1)
+        self.assertEqual(
+            repository.get_baseline(batch.site_name).baseline_batch_id,
+            batch.id,
+        )
+        connection = sqlite3.connect(legacy_path)
+        try:
+            self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+        finally:
+            connection.close()
 
 
 if __name__ == "__main__":

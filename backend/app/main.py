@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from urllib.parse import quote
 
 from .check_service import CheckService
 from .domain.models import (
@@ -18,6 +19,8 @@ from .domain.models import (
     SiteBaseline,
 )
 from .repositories.sqlite_history import SqliteHistoryRepository
+from .renderers.csv_report import CsvReportRenderer
+from .renderers.html_report import HtmlReportRenderer
 from .schemas import (
     BatchCreateRequest,
     BaselineRequest,
@@ -31,6 +34,7 @@ from .services.comparison_service import (
     BaselineRequiresConfirmationError,
     ComparisonService,
 )
+from .services.report_service import ReportService, UnsupportedReportFormatError
 from .site_store import SiteStore
 
 
@@ -47,6 +51,11 @@ history = SqliteHistoryRepository(
 )
 batch_service = BatchService(history, check_service.adapter)
 comparison_service = ComparisonService(history)
+report_service = ReportService(
+    history,
+    comparison_service,
+    {"csv": CsvReportRenderer(), "html": HtmlReportRenderer()},
+)
 
 
 @asynccontextmanager
@@ -213,6 +222,19 @@ def get_check_batch(batch_id: str) -> BatchDetailResponse:
         raise HTTPException(status_code=404, detail="batch not found") from error
 
 
+@app.post("/api/check/batches/{batch_id}/cancel", response_model=CheckBatch)
+def cancel_check_batch(batch_id: str) -> CheckBatch:
+    try:
+        batch = history.get_batch(batch_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="batch not found") from error
+    if batch.status not in {"pending", "running"}:
+        raise HTTPException(status_code=409, detail="batch is no longer running")
+    if not batch_service.cancel_batch(batch_id):
+        raise HTTPException(status_code=409, detail="batch could not be cancelled")
+    return history.get_batch(batch_id)
+
+
 @app.get("/api/sites/{site_name}/baseline", response_model=SiteBaseline)
 def get_site_baseline(site_name: str) -> SiteBaseline:
     baseline = history.get_baseline(site_name)
@@ -252,6 +274,27 @@ def compare_check_batch(batch_id: str) -> BatchComparison:
         raise HTTPException(status_code=404, detail="batch not found") from error
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get("/api/check/batches/{batch_id}/report")
+def download_check_batch_report(
+    batch_id: str,
+    report_format: str = Query(alias="format", pattern="^(csv|html)$"),
+) -> Response:
+    try:
+        report = report_service.render(batch_id, report_format)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="batch not found") from error
+    except UnsupportedReportFormatError as error:
+        raise HTTPException(status_code=422, detail="unsupported report format") from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    disposition = f"attachment; filename*=UTF-8''{quote(report.filename)}"
+    return Response(
+        content=report.content,
+        media_type=report.content_type,
+        headers={"Content-Disposition": disposition},
+    )
 
 
 @app.get("/api/status")

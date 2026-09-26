@@ -9,7 +9,7 @@ from ..schemas import CheckResult, DeviceConfig, SiteConfig
 
 
 BatchMode = Literal["single", "full"]
-BatchStatus = Literal["pending", "running", "completed", "failed"]
+BatchStatus = Literal["pending", "running", "completed", "failed", "cancelled"]
 
 
 class BatchCounts(BaseModel):
@@ -78,6 +78,13 @@ class BatchComparison(BaseModel):
     baseline_batch_id: str | None = None
     baseline_set_at: datetime | None = None
     comparisons: list[DeviceComparison]
+
+
+class ReportContext(BaseModel):
+    batch: CheckBatch
+    records: list[CheckRecord]
+    comparison: BatchComparison
+    generated_at: datetime
 
 
 class BatchListResponse(BaseModel):

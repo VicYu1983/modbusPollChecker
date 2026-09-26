@@ -3,7 +3,7 @@ from __future__ import annotations
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from collections.abc import Callable
-from threading import Lock
+from threading import Event, Lock
 from uuid import uuid4
 
 from ..domain.models import BatchCounts, BatchDetailResponse, CheckBatch, CheckRecord
@@ -29,6 +29,8 @@ class BatchService:
         self._device_executor = ThreadPoolExecutor(max_workers=max_workers)
         self._lock = Lock()
         self._active_batch_id: str | None = None
+        self._active_cancel_event: Event | None = None
+        self._active_futures: list[Future[CheckResult]] = []
 
     def start_batch(
         self,
@@ -69,12 +71,15 @@ class BatchService:
             )
             self.history.create_batch(batch)
             self._active_batch_id = batch.id
+            cancel_event = Event()
+            self._active_cancel_event = cancel_event
             try:
                 self._batch_executor.submit(
-                    self._run_batch, batch, selected_devices, on_complete
+                    self._run_batch, batch, selected_devices, on_complete, cancel_event
                 )
             except Exception as error:
                 self._active_batch_id = None
+                self._active_cancel_event = None
                 self.history.update_batch_status(
                     batch.id,
                     "failed",
@@ -89,15 +94,25 @@ class BatchService:
         batch: CheckBatch,
         devices: list[DeviceConfig],
         on_complete: Callable[[], None] | None,
+        cancel_event: Event,
     ) -> None:
         try:
             self.history.update_batch_status(batch.id, "running")
-            futures: dict[Future[CheckResult], DeviceConfig] = {
-                self._device_executor.submit(self.checker.check_device, device): device
-                for device in devices
-            }
+            futures: dict[Future[CheckResult], DeviceConfig] = {}
+            if not cancel_event.is_set():
+                futures = {
+                    self._device_executor.submit(self.checker.check_device, device): device
+                    for device in devices
+                }
+            with self._lock:
+                self._active_futures = list(futures)
+            if cancel_event.is_set():
+                for future in futures:
+                    future.cancel()
             counts = BatchCounts()
             for future in as_completed(futures):
+                if future.cancelled():
+                    continue
                 device = futures[future]
                 try:
                     result = future.result()
@@ -120,7 +135,7 @@ class BatchService:
                 setattr(counts, count_field, getattr(counts, count_field) + 1)
             self.history.update_batch_status(
                 batch.id,
-                "completed",
+                "cancelled" if cancel_event.is_set() else "completed",
                 completed_at=datetime.now(timezone.utc),
                 counts=counts,
             )
@@ -134,8 +149,19 @@ class BatchService:
         finally:
             with self._lock:
                 self._active_batch_id = None
+                self._active_cancel_event = None
+                self._active_futures = []
             if on_complete:
                 on_complete()
+
+    def cancel_batch(self, batch_id: str) -> bool:
+        with self._lock:
+            if self._active_batch_id != batch_id or self._active_cancel_event is None:
+                return False
+            self._active_cancel_event.set()
+            for future in self._active_futures:
+                future.cancel()
+            return True
 
     def get_batch(self, batch_id: str) -> BatchDetailResponse:
         batch = self.history.get_batch(batch_id)

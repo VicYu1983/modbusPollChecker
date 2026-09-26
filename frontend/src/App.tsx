@@ -147,6 +147,7 @@ function DeleteSavedSiteButton() {
 }
 
 function Dashboard() {
+  const batchPageSize = 25;
   const [siteName, setSiteName] = useState("未命名案場");
   const [devices, setDevices] = useState<Device[]>([]);
   const [editing, setEditing] = useState<Device | null>(null);
@@ -154,11 +155,14 @@ function Dashboard() {
   const [checking, setChecking] = useState(false);
   const [pollingActive, setPollingActive] = useState(false);
   const [batches, setBatches] = useState<CheckBatch[]>([]);
+  const [batchPage, setBatchPage] = useState(1);
+  const [batchTotal, setBatchTotal] = useState(0);
   const [baseline, setBaseline] = useState<SiteBaseline | null>(null);
   const [batchDetail, setBatchDetail] = useState<BatchDetail | null>(null);
   const [comparison, setComparison] = useState<BatchComparison | null>(null);
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [batchStarting, setBatchStarting] = useState(false);
+  const [cancellingBatchId, setCancellingBatchId] = useState<string | null>(null);
   const [comparisonLoadingId, setComparisonLoadingId] = useState<string | null>(null);
   const { message } = AntApp.useApp();
   const counts = useMemo(
@@ -228,17 +232,18 @@ function Dashboard() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      api.listBatches(siteName).catch(() => null),
+      api.listBatches(siteName, (batchPage - 1) * batchPageSize, batchPageSize).catch(() => null),
       api.getBaseline(siteName).catch(() => null),
     ]).then(([history, currentBaseline]) => {
       if (cancelled) return;
       setBatches(history?.items ?? []);
+      setBatchTotal(history?.total ?? 0);
       setBaseline(currentBaseline);
     });
     return () => {
       cancelled = true;
     };
-  }, [siteName]);
+  }, [batchPage, batchPageSize, siteName]);
   useEffect(() => {
     if (!activeBatchId) return;
     let cancelled = false;
@@ -248,10 +253,15 @@ function Dashboard() {
         const detail = await api.getBatch(activeBatchId);
         if (cancelled) return;
         setBatchDetail(detail);
-        if (detail.batch.status === "completed" || detail.batch.status === "failed") {
-          const history = await api.listBatches(siteName);
+        if (["completed", "failed", "cancelled"].includes(detail.batch.status)) {
+          const history = await api.listBatches(
+            siteName,
+            (batchPage - 1) * batchPageSize,
+            batchPageSize,
+          );
           if (cancelled) return;
           setBatches(history.items);
+          setBatchTotal(history.total);
           setActiveBatchId(null);
           return;
         }
@@ -266,7 +276,7 @@ function Dashboard() {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [activeBatchId, siteName]);
+  }, [activeBatchId, batchPage, batchPageSize, siteName]);
   useEffect(() => {
     if (!pollingActive) return;
     const refreshStatus = () => {
@@ -326,7 +336,9 @@ function Dashboard() {
     try {
       const batch = await api.createBatch(siteName);
       setBatchDetail({ batch, records: [], completed_device_count: 0 });
+      setBatchPage(1);
       setBatches((current) => [batch, ...current.filter((item) => item.id !== batch.id)]);
+      setBatchTotal((total) => total + 1);
       setActiveBatchId(batch.id);
       message.info("回歸檢查已開始");
     } catch (error) {
@@ -365,6 +377,20 @@ function Dashboard() {
       message.error(error instanceof Error ? error.message : "批次比較失敗");
     } finally {
       setComparisonLoadingId(null);
+    }
+  };
+  const cancelBatch = async (batch: CheckBatch) => {
+    setCancellingBatchId(batch.id);
+    try {
+      const updated = await api.cancelBatch(batch.id);
+      setBatches((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item))
+      );
+      message.info("已送出取消要求；目前進行中的設備讀取會完成後停止後續檢查");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "取消批次失敗");
+    } finally {
+      setCancellingBatchId(null);
     }
   };
   const submit = async () => {
@@ -615,8 +641,17 @@ function Dashboard() {
       title: "狀態",
       dataIndex: "status",
       key: "status",
-      render: (status: CheckBatch["status"]) =>
-        status === "completed" ? <Tag color="success">完成</Tag> : <Tag>{status}</Tag>,
+      render: (status: CheckBatch["status"]) => {
+        const labels: Record<CheckBatch["status"], string> = {
+          pending: "排隊中",
+          running: "執行中",
+          completed: "完成",
+          failed: "失敗",
+          cancelled: "已取消",
+        };
+        const color = status === "completed" ? "success" : status === "failed" ? "error" : status === "cancelled" ? "default" : "processing";
+        return <Tag color={color}>{labels[status]}</Tag>;
+      },
     },
     {
       title: "基準",
@@ -629,6 +664,16 @@ function Dashboard() {
       key: "actions",
       render: (_: unknown, batch: CheckBatch) => (
         <Space size={4}>
+          {(batch.status === "pending" || batch.status === "running") && (
+            <Button
+              type="link"
+              danger
+              loading={cancellingBatchId === batch.id}
+              onClick={() => void cancelBatch(batch)}
+            >
+              取消
+            </Button>
+          )}
           <Button
             type="link"
             disabled={batch.status !== "completed"}
@@ -643,6 +688,20 @@ function Dashboard() {
             onClick={() => setBatchAsBaseline(batch)}
           >
             設為基準
+          </Button>
+          <Button
+            type="link"
+            disabled={batch.status !== "completed"}
+            href={api.getReportUrl(batch.id, "csv")}
+          >
+            CSV
+          </Button>
+          <Button
+            type="link"
+            disabled={batch.status !== "completed"}
+            href={api.getReportUrl(batch.id, "html")}
+          >
+            HTML
           </Button>
         </Space>
       ),
@@ -989,11 +1048,26 @@ function Dashboard() {
                 style={{ marginBottom: 16 }}
               />
             )}
+            {batchDetail?.batch.status === "cancelled" && (
+              <Alert
+                type="warning"
+                showIcon
+                message="回歸檢查已取消"
+                description="已停止尚未開始的設備檢查；取消前已完成或正在執行的結果仍會保留在批次中。"
+                style={{ marginBottom: 16 }}
+              />
+            )}
             <Table
               rowKey="id"
               columns={batchColumns}
               dataSource={batches}
-              pagination={{ pageSize: 5, hideOnSinglePage: true }}
+              pagination={{
+                current: batchPage,
+                pageSize: batchPageSize,
+                total: batchTotal,
+                hideOnSinglePage: true,
+                onChange: (page) => setBatchPage(page),
+              }}
               size="small"
               scroll={{ x: 720 }}
               locale={{ emptyText: "尚無檢查批次" }}

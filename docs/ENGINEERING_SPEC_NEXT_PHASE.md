@@ -686,16 +686,16 @@ TypeScript 型別與後端 Pydantic 模型對齊。回歸檢查進度用 `setInt
 
 1. 前端快速回歸檢查畫面與進度輪詢。
 2. 批次歷史與明細畫面。
-3. CSV / HTML Renderer + ReportService + 下載 API。
+3. CSV / HTML Renderer + ReportService + 下載 API。（已完成）
 4. 基準設定/更換的確認對話框。
 
 驗收：從載入案場到拿到 HTML 報告，不超過 5 次點擊。
 
 ### Phase 2D：穩定性
 
-1. 批次取消。
+1. 批次取消。（已完成；當前設備讀取會依逾時完成，尚未開始的設備工作會取消）
 2. 大量設備（200+）的查詢分頁與前端效能。
-3. 資料庫備份說明文件。
+3. 資料庫備份說明文件。（已完成，見 [DATA_BACKUP.md](DATA_BACKUP.md)）
 4. 前端 bundle 分割（路由級 lazy import）。
 
 ## 15. 風險與對策

@@ -40,7 +40,7 @@ export type CheckBatch = {
   id: string
   site_name: string
   mode: 'single' | 'full'
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   device_names: string[]
   config_snapshot: SiteConfig
   note: string | null
@@ -131,11 +131,17 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ site_name: siteName }),
   }),
-  listBatches: (siteName: string) => request<{ items: CheckBatch[]; total: number }>(
-    `/api/check/batches?site_name=${encodeURIComponent(siteName)}&limit=20`,
+  listBatches: (siteName: string, offset = 0, limit = 25) => request<{ items: CheckBatch[]; total: number }>(
+    `/api/check/batches?site_name=${encodeURIComponent(siteName)}&offset=${offset}&limit=${limit}`,
   ),
   getBatch: (batchId: string) => request<BatchDetail>(`/api/check/batches/${encodeURIComponent(batchId)}`),
+  cancelBatch: (batchId: string) => request<CheckBatch>(
+    `/api/check/batches/${encodeURIComponent(batchId)}/cancel`,
+    { method: 'POST' },
+  ),
   getComparison: (batchId: string) => request<BatchComparison>(`/api/check/batches/${encodeURIComponent(batchId)}/comparison`),
+  getReportUrl: (batchId: string, format: 'csv' | 'html') =>
+    `/api/check/batches/${encodeURIComponent(batchId)}/report?format=${format}`,
   getBaseline: (siteName: string) => request<SiteBaseline>(`/api/sites/${encodeURIComponent(siteName)}/baseline`),
   setBaseline: (siteName: string, batchId: string, force: boolean) => request<SiteBaseline>(
     `/api/sites/${encodeURIComponent(siteName)}/baseline`,

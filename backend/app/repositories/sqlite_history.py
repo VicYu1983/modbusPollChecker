@@ -47,15 +47,22 @@ class SqliteHistoryRepository:
                 version = int(migration.stem.split("_", 1)[0])
                 if version in applied:
                     continue
-                connection.executescript(
-                    "BEGIN IMMEDIATE;\n"
-                    + migration.read_text(encoding="utf-8")
-                    + "\nINSERT INTO schema_migrations(version, applied_at) VALUES ("
-                    + str(version)
-                    + ", '"
-                    + datetime.now(timezone.utc).isoformat()
-                    + "');\nCOMMIT;"
-                )
+                connection.execute("PRAGMA foreign_keys = OFF")
+                try:
+                    connection.executescript(
+                        "BEGIN IMMEDIATE;\n"
+                        + migration.read_text(encoding="utf-8")
+                        + "\nINSERT INTO schema_migrations(version, applied_at) VALUES ("
+                        + str(version)
+                        + ", '"
+                        + datetime.now(timezone.utc).isoformat()
+                        + "');\nCOMMIT;"
+                    )
+                finally:
+                    connection.execute("PRAGMA foreign_keys = ON")
+                violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+                if violations:
+                    raise sqlite3.IntegrityError("database migration broke foreign keys")
 
     def create_batch(self, batch: CheckBatch) -> None:
         with self._connection() as connection:
