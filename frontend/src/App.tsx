@@ -12,6 +12,7 @@ import {
   InputNumber,
   Layout,
   Modal,
+  Progress,
   Row,
   Select,
   Space,
@@ -69,6 +70,12 @@ const comparisonMeta: Record<ComparisonStatus, { label: string; color: string }>
   BASELINE_ONLY: { label: "本次未檢查", color: "default" },
   NEW_DEVICE: { label: "新增設備", color: "processing" },
   NO_BASELINE: { label: "尚無基準", color: "default" },
+};
+const regressionPriority: Partial<Record<ComparisonStatus, number>> = {
+  NEW_FAILURE: 0,
+  LATENCY_DEGRADED: 1,
+  VALUE_CHANGED: 2,
+  CONFIG_CHANGED: 3,
 };
 const defaults = {
   name: "",
@@ -164,6 +171,7 @@ function Dashboard() {
   const [comparison, setComparison] = useState<BatchComparison | null>(null);
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [batchStarting, setBatchStarting] = useState(false);
+  const [batchNote, setBatchNote] = useState("");
   const [cancellingBatchId, setCancellingBatchId] = useState<string | null>(null);
   const [comparisonLoadingId, setComparisonLoadingId] = useState<string | null>(null);
   const { message } = AntApp.useApp();
@@ -336,8 +344,25 @@ function Dashboard() {
     setBatchStarting(true);
     setComparison(null);
     try {
-      const batch = await api.createBatch(siteName);
-      setBatchDetail({ batch, records: [], completed_device_count: 0 });
+      const batch = await api.createBatch(siteName, batchNote.trim());
+      setBatchDetail({
+        batch,
+        records: [],
+        completed_device_count: 0,
+        health_summary: {
+          device_count: 0,
+          pass_count: 0,
+          fail_count: 0,
+          timeout_count: 0,
+          config_error_count: 0,
+          pass_rate: 0,
+          avg_elapsed_ms: null,
+          slowest_device: null,
+          slowest_elapsed_ms: null,
+          new_failure_count: 0,
+        },
+      });
+      setBatchNote("");
       setBatchPage(1);
       setBatches((current) => [batch, ...current.filter((item) => item.id !== batch.id)]);
       setBatchTotal((total) => total + 1);
@@ -374,7 +399,12 @@ function Dashboard() {
   const compareBatch = async (batch: CheckBatch) => {
     setComparisonLoadingId(batch.id);
     try {
-      setComparison(await api.getComparison(batch.id));
+      const [detail, batchComparison] = await Promise.all([
+        api.getBatch(batch.id),
+        api.getComparison(batch.id),
+      ]);
+      setBatchDetail(detail);
+      setComparison(batchComparison);
     } catch (error) {
       message.error(error instanceof Error ? error.message : "批次比較失敗");
     } finally {
@@ -416,6 +446,7 @@ function Dashboard() {
                           values: d.values ?? [],
                           elapsed_ms: d.elapsedMs ?? 0,
                           error_message: d.error ?? null,
+                          error_type: null,
                         }
                   )
                 : d
@@ -656,6 +687,12 @@ function Dashboard() {
       },
     },
     {
+      title: "備註",
+      dataIndex: "note",
+      key: "note",
+      render: (note: string | null) => note || "—",
+    },
+    {
       title: "基準",
       key: "baseline",
       render: (_: unknown, batch: CheckBatch) =>
@@ -740,6 +777,50 @@ function Dashboard() {
       dataIndex: "response_time_delta_ms",
       key: "response_time_delta_ms",
       render: (value: number | null) => value === null ? "—" : `${value > 0 ? "+" : ""}${value} ms`,
+    },
+  ];
+  const anomalyRecords = (batchDetail?.records ?? [])
+    .filter((record) =>
+      record.result.status !== "PASS" ||
+      (record.comparison_status !== null && record.comparison_status in regressionPriority)
+    )
+    .sort((left, right) => {
+      const leftRank = left.comparison_status
+        ? regressionPriority[left.comparison_status] ?? 4
+        : 0;
+      const rightRank = right.comparison_status
+        ? regressionPriority[right.comparison_status] ?? 4
+        : 0;
+      return leftRank - rightRank;
+    });
+  const anomalyColumns = [
+    {
+      title: "設備",
+      dataIndex: "result",
+      key: "device",
+      render: (result: CheckResult) => result.device_name,
+    },
+    {
+      title: "本次狀態",
+      dataIndex: "result",
+      key: "result_status",
+      render: (result: CheckResult) => (
+        <Tag color={statusMeta[result.status].color}>{statusMeta[result.status].label}</Tag>
+      ),
+    },
+    {
+      title: "回歸差異",
+      dataIndex: "comparison_status",
+      key: "comparison_status",
+      render: (status: ComparisonStatus | null) =>
+        status ? <Tag color={comparisonMeta[status].color}>{comparisonMeta[status].label}</Tag> : "—",
+    },
+    {
+      title: "診斷摘要",
+      dataIndex: "diagnosis",
+      key: "diagnosis",
+      render: (diagnosis: NonNullable<BatchDetail["records"][number]["diagnosis"]> | null) =>
+        diagnosis?.summary ?? "尚無診斷資料",
     },
   ];
   return (
@@ -1041,6 +1122,16 @@ function Dashboard() {
               </Button>
             }
           >
+            <Input.TextArea
+              aria-label="本次檢查備註"
+              value={batchNote}
+              onChange={(event) => setBatchNote(event.target.value)}
+              maxLength={500}
+              showCount
+              placeholder="本次變更或檢查備註（選填）"
+              autoSize={{ minRows: 2, maxRows: 4 }}
+              style={{ marginBottom: 16 }}
+            />
             <Alert
               type={baseline ? "success" : "warning"}
               showIcon
@@ -1056,14 +1147,42 @@ function Dashboard() {
               }
               style={{ marginBottom: 16 }}
             />
-            {batchDetail && (batchDetail.batch.status === "pending" || batchDetail.batch.status === "running") && (
-              <Alert
-                type="info"
-                showIcon
-                message="回歸檢查執行中"
-                description={`已完成 ${batchDetail.completed_device_count} / ${batchDetail.batch.device_names.length} 台設備`}
-                style={{ marginBottom: 16 }}
-              />
+            {batchDetail && (
+              <div className="regression-progress">
+                <div className="regression-progress-heading">
+                  <strong>
+                    {batchDetail.batch.status === "completed"
+                      ? "最近批次已完成"
+                      : batchDetail.batch.status === "failed"
+                        ? "最近批次失敗"
+                        : batchDetail.batch.status === "cancelled"
+                          ? "最近批次已取消"
+                          : "回歸檢查執行中"}
+                  </strong>
+                  <span>
+                    {batchDetail.completed_device_count} / {batchDetail.batch.device_names.length} 台設備
+                  </span>
+                </div>
+                <Progress
+                  percent={batchDetail.batch.device_names.length
+                    ? Math.round(batchDetail.completed_device_count / batchDetail.batch.device_names.length * 100)
+                    : 0}
+                  status={batchDetail.batch.status === "failed" ? "exception" : "normal"}
+                />
+              </div>
+            )}
+            {batchDetail && (
+              <Row gutter={[12, 12]} className="health-summary">
+                <Col xs={12} md={6}><Statistic title="檢查設備" value={batchDetail.health_summary.device_count} suffix="台" /></Col>
+                <Col xs={12} md={6}><Statistic title="通過率" value={Math.round(batchDetail.health_summary.pass_rate * 100)} suffix="%" /></Col>
+                <Col xs={12} md={6}><Statistic title="通過" value={batchDetail.health_summary.pass_count} /></Col>
+                <Col xs={12} md={6}><Statistic title="新增異常" value={batchDetail.health_summary.new_failure_count} /></Col>
+                <Col xs={12} md={6}><Statistic title="平均回應" value={batchDetail.health_summary.avg_elapsed_ms === null ? "—" : Math.round(batchDetail.health_summary.avg_elapsed_ms)} suffix={batchDetail.health_summary.avg_elapsed_ms === null ? "" : "ms"} /></Col>
+                <Col xs={12} md={6}><Statistic title="失敗" value={batchDetail.health_summary.fail_count} /></Col>
+                <Col xs={12} md={6}><Statistic title="逾時" value={batchDetail.health_summary.timeout_count} /></Col>
+                <Col xs={12} md={6}><Statistic title="設定錯誤" value={batchDetail.health_summary.config_error_count} /></Col>
+                <Col xs={12} md={6}><Statistic title="最慢設備" value={batchDetail.health_summary.slowest_device ?? "—"} suffix={batchDetail.health_summary.slowest_elapsed_ms === null ? "" : `${batchDetail.health_summary.slowest_elapsed_ms} ms`} /></Col>
+              </Row>
             )}
             {batchDetail?.batch.status === "failed" && (
               <Alert
@@ -1082,6 +1201,29 @@ function Dashboard() {
                 description="已停止尚未開始的設備檢查；取消前已完成或正在執行的結果仍會保留在批次中。"
                 style={{ marginBottom: 16 }}
               />
+            )}
+            {anomalyRecords.length > 0 && (
+              <div className="priority-anomalies">
+                <Divider>優先處理設備</Divider>
+                <Table
+                  rowKey={(record) => record.result.device_name}
+                  columns={anomalyColumns}
+                  dataSource={anomalyRecords}
+                  pagination={{ pageSize: 10, hideOnSinglePage: true }}
+                  expandable={{
+                    expandedRowRender: (record) => (
+                      <ul className="diagnosis-suggestions">
+                        {(record.diagnosis?.suggestions ?? []).map((suggestion) => (
+                          <li key={suggestion}>{suggestion}</li>
+                        ))}
+                      </ul>
+                    ),
+                    rowExpandable: (record) => Boolean(record.diagnosis?.suggestions.length),
+                  }}
+                  size="small"
+                  scroll={{ x: 700 }}
+                />
+              </div>
             )}
             <Table
               rowKey="id"

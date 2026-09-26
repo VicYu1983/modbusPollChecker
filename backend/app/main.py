@@ -49,8 +49,12 @@ history = SqliteHistoryRepository(
         )
     )
 )
-batch_service = BatchService(history, check_service.adapter)
 comparison_service = ComparisonService(history)
+batch_service = BatchService(
+    history,
+    check_service.adapter,
+    comparison=comparison_service,
+)
 report_service = ReportService(
     history,
     comparison_service,

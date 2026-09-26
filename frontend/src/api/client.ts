@@ -28,6 +28,7 @@ export type CheckResult = {
   values: Array<number | boolean>
   elapsed_ms: number
   error_message: string | null
+  error_type: string | null
 }
 
 export type PollingStatus = {
@@ -59,12 +60,35 @@ export type CheckRecord = {
   batch_id: string
   result: CheckResult
   device_snapshot: DeviceConfig
+  comparison_status: ComparisonStatus | null
+  response_time_delta_ms: number | null
+  diagnosis: Diagnosis | null
+}
+
+export type Diagnosis = {
+  category: 'NETWORK' | 'MODBUS_TIMEOUT' | 'MODBUS_EXCEPTION' | 'DATA_MISMATCH' | 'LATENCY' | 'CONFIG'
+  summary: string
+  suggestions: string[]
+}
+
+export type HealthSummary = {
+  device_count: number
+  pass_count: number
+  fail_count: number
+  timeout_count: number
+  config_error_count: number
+  pass_rate: number
+  avg_elapsed_ms: number | null
+  slowest_device: string | null
+  slowest_elapsed_ms: number | null
+  new_failure_count: number
 }
 
 export type BatchDetail = {
   batch: CheckBatch
   records: CheckRecord[]
   completed_device_count: number
+  health_summary: HealthSummary
 }
 
 export type SiteBaseline = {
@@ -127,9 +151,9 @@ export const api = {
   startPolling: () => request<{ started: boolean; status: PollingStatus }>('/api/polling/start', { method: 'POST' }),
   stopPolling: () => request<{ stopped: boolean; status: PollingStatus }>('/api/polling/stop', { method: 'POST' }),
   getPollingStatus: () => request<PollingStatus>('/api/polling/status'),
-  createBatch: (siteName: string) => request<CheckBatch>('/api/check/batches', {
+  createBatch: (siteName: string, note?: string) => request<CheckBatch>('/api/check/batches', {
     method: 'POST',
-    body: JSON.stringify({ site_name: siteName }),
+    body: JSON.stringify({ site_name: siteName, note: note || null }),
   }),
   listBatches: (siteName: string, offset = 0, limit = 25) => request<{ items: CheckBatch[]; total: number }>(
     `/api/check/batches?site_name=${encodeURIComponent(siteName)}&offset=${offset}&limit=${limit}`,

@@ -10,6 +10,14 @@ from ..schemas import CheckResult, DeviceConfig, SiteConfig
 
 BatchMode = Literal["single", "full"]
 BatchStatus = Literal["pending", "running", "completed", "failed", "cancelled"]
+DiagnosisCategory = Literal[
+    "NETWORK",
+    "MODBUS_TIMEOUT",
+    "MODBUS_EXCEPTION",
+    "DATA_MISMATCH",
+    "LATENCY",
+    "CONFIG",
+]
 
 
 class BatchCounts(BaseModel):
@@ -18,6 +26,25 @@ class BatchCounts(BaseModel):
     timeout_count: int = 0
     config_error_count: int = 0
     unknown_count: int = 0
+
+
+class HealthSummary(BaseModel):
+    device_count: int
+    pass_count: int
+    fail_count: int
+    timeout_count: int
+    config_error_count: int
+    pass_rate: float
+    avg_elapsed_ms: float | None
+    slowest_device: str | None
+    slowest_elapsed_ms: int | None
+    new_failure_count: int = 0
+
+
+class Diagnosis(BaseModel):
+    category: DiagnosisCategory
+    summary: str
+    suggestions: list[str]
 
 
 class CheckBatch(BaseModel):
@@ -43,6 +70,9 @@ class CheckRecord(BaseModel):
     batch_id: str
     result: CheckResult
     device_snapshot: DeviceConfig
+    comparison_status: ComparisonStatus | None = None
+    response_time_delta_ms: int | None = None
+    diagnosis: Diagnosis | None = None
 
 
 class SiteBaseline(BaseModel):
@@ -96,3 +126,4 @@ class BatchDetailResponse(BaseModel):
     batch: CheckBatch
     records: list[CheckRecord]
     completed_device_count: int
+    health_summary: HealthSummary

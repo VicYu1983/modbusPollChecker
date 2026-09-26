@@ -10,6 +10,7 @@ from app.domain.models import CheckBatch, CheckRecord
 from app.repositories.sqlite_history import SqliteHistoryRepository
 from app.schemas import CheckResult, DeviceConfig, SiteConfig
 from app.services.batch_service import BatchService
+from app.services.comparison_service import ComparisonService
 
 
 class PassingChecker:
@@ -41,6 +42,18 @@ class BlockingChecker(PassingChecker):
         self.started.set()
         self.release.wait(timeout=2)
         return super().check_device(device)
+
+
+class TimeoutChecker(PassingChecker):
+    def check_device(self, device: DeviceConfig) -> CheckResult:
+        result = super().check_device(device)
+        return result.model_copy(
+            update={
+                "status": "TIMEOUT",
+                "error_type": "TIMEOUT",
+                "error_message": "response timed out",
+            }
+        )
 
 
 class BatchHistoryTests(unittest.TestCase):
@@ -102,11 +115,49 @@ class BatchHistoryTests(unittest.TestCase):
 
         completed = self.repository.get_batch(batch.id)
         records = self.repository.list_records(batch.id)
+        detail = service.get_batch(batch.id)
         self.assertEqual(completed.status, "completed")
         self.assertEqual(completed.pass_count, 2)
         self.assertEqual(completed.config_snapshot, config)
         self.assertEqual(len(records), 2)
         self.assertEqual(completed.note, "after wiring change")
+        self.assertEqual(detail.health_summary.pass_rate, 1)
+        self.assertEqual(detail.health_summary.pass_count, 2)
+        self.assertTrue(all(record.diagnosis is None for record in detail.records))
+
+    def test_batch_detail_includes_diagnosis_and_new_failure_summary(self) -> None:
+        baseline = self._batch()
+        baseline_record = PassingChecker().check_device(baseline.config_snapshot.devices[0])
+        self.repository.create_batch(baseline)
+        self.repository.save_record(
+            CheckRecord(
+                batch_id=baseline.id,
+                result=baseline_record,
+                device_snapshot=baseline.config_snapshot.devices[0],
+            )
+        )
+        self.repository.update_batch_status(
+            baseline.id,
+            "completed",
+            completed_at=datetime.now(timezone.utc),
+        )
+        self.repository.set_baseline(baseline.site_name, baseline.id)
+
+        service = BatchService(
+            self.repository,
+            TimeoutChecker(),
+            comparison=ComparisonService(self.repository),
+        )
+        try:
+            batch = service.start_batch(baseline.config_snapshot)
+        finally:
+            service.shutdown()
+
+        detail = service.get_batch(batch.id)
+        self.assertEqual(detail.health_summary.timeout_count, 1)
+        self.assertEqual(detail.health_summary.new_failure_count, 1)
+        self.assertEqual(detail.records[0].comparison_status, "NEW_FAILURE")
+        self.assertEqual(detail.records[0].diagnosis.category, "MODBUS_TIMEOUT")
 
     def test_list_batches_is_paginated_and_scoped_by_site(self) -> None:
         self.repository.create_batch(self._batch())

@@ -6,10 +6,13 @@ from collections.abc import Callable
 from threading import Event, Lock
 from uuid import uuid4
 
+from ..domain.diagnosis import diagnose
+from ..domain.health import summarize
 from ..domain.models import BatchCounts, BatchDetailResponse, CheckBatch, CheckRecord
 from ..ports.checker import DeviceChecker
 from ..ports.history import HistoryRepository
 from ..schemas import CheckResult, DeviceConfig, SiteConfig
+from .comparison_service import ComparisonService
 
 
 class BatchAlreadyRunningError(RuntimeError):
@@ -22,9 +25,11 @@ class BatchService:
         history: HistoryRepository,
         checker: DeviceChecker,
         max_workers: int = 10,
+        comparison: ComparisonService | None = None,
     ) -> None:
         self.history = history
         self.checker = checker
+        self.comparison = comparison
         self._batch_executor = ThreadPoolExecutor(max_workers=1)
         self._device_executor = ThreadPoolExecutor(max_workers=max_workers)
         self._lock = Lock()
@@ -166,10 +171,39 @@ class BatchService:
     def get_batch(self, batch_id: str) -> BatchDetailResponse:
         batch = self.history.get_batch(batch_id)
         records = self.history.list_records(batch_id)
+        comparisons = {}
+        if batch.status == "completed" and self.comparison is not None:
+            comparisons = {
+                item.device_name: item
+                for item in self.comparison.compare(batch_id).comparisons
+            }
+        enriched_records = []
+        for record in records:
+            comparison = comparisons.get(record.result.device_name)
+            enriched_records.append(
+                record.model_copy(
+                    update={
+                        "comparison_status": comparison.status if comparison else None,
+                        "response_time_delta_ms": (
+                            comparison.response_time_delta_ms if comparison else None
+                        ),
+                        "diagnosis": diagnose(
+                            record.result,
+                            comparison.status if comparison else None,
+                        ),
+                    }
+                )
+            )
+        records = enriched_records
+        health_summary = summarize(records)
+        health_summary.new_failure_count = sum(
+            item.status == "NEW_FAILURE" for item in comparisons.values()
+        )
         return BatchDetailResponse(
             batch=batch,
             records=records,
             completed_device_count=len(records),
+            health_summary=health_summary,
         )
 
     def list_batches(
