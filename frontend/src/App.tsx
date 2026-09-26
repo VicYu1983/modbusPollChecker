@@ -21,6 +21,7 @@ import {
   Tabs,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import {
@@ -100,7 +101,7 @@ function DeleteSavedSiteButton() {
       const frame = window.requestAnimationFrame(onStoreChange);
       return () => window.cancelAnimationFrame(frame);
     },
-    () => document.querySelector(".intro .ant-space"),
+    () => document.querySelector(".header-actions"),
     () => null
   );
   const { message } = AntApp.useApp();
@@ -142,13 +143,14 @@ function DeleteSavedSiteButton() {
 
   return container
     ? createPortal(
-        <Button
-          danger
-          icon={<DeleteOutlined />}
-          onClick={() => void deleteSavedConfig()}
-        >
-          刪除存檔
-        </Button>,
+        <Tooltip title="刪除案場存檔">
+          <Button
+            danger
+            aria-label="刪除案場存檔"
+            icon={<DeleteOutlined />}
+            onClick={() => void deleteSavedConfig()}
+          />
+        </Tooltip>,
         container
       )
     : null;
@@ -845,6 +847,32 @@ function Dashboard() {
             bordered={false}
           />
         </div>
+        <div className="header-actions">
+          <Space size={6}>
+            <Tooltip title="儲存案場設定">
+              <Button
+                aria-label="儲存案場設定"
+                icon={<SaveOutlined />}
+                onClick={saveConfig}
+              />
+            </Tooltip>
+            <Tooltip title="讀取案場設定">
+              <Button
+                aria-label="讀取案場設定"
+                icon={<FolderOpenOutlined />}
+                onClick={readConfig}
+              />
+            </Tooltip>
+            <Tooltip title="清空目前設定">
+              <Button
+                danger
+                aria-label="清空目前設定"
+                icon={<DeleteOutlined />}
+                onClick={clearCurrentConfig}
+              />
+            </Tooltip>
+          </Space>
+        </div>
         <div className="local-badge">
           <span className="pulse" /> LOCAL INSTANCE
         </div>
@@ -869,21 +897,6 @@ function Dashboard() {
               集中管理現場 Modbus TCP 設備，快速確認每一條連線的健康狀態。
             </Typography.Paragraph>
           </div>
-          <Space wrap>
-            <Button icon={<SaveOutlined />} onClick={saveConfig}>
-              儲存
-            </Button>
-            <Button icon={<FolderOpenOutlined />} onClick={readConfig}>
-              讀取
-            </Button>
-            <Button
-              danger
-              icon={<DeleteOutlined />}
-              onClick={clearCurrentConfig}
-            >
-              清空設定
-            </Button>
-          </Space>
         </section>
         <Row gutter={[16, 16]} className="metrics">
           <Col xs={8}>
@@ -1282,7 +1295,6 @@ function Dashboard() {
 export default function App() {
   return (
     <AntApp>
-      <style>{".intro .ant-space > .ant-btn-primary { display: none; }"}</style>
       <Dashboard />
       <DeleteSavedSiteButton />
     </AntApp>
