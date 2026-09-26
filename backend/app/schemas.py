@@ -94,6 +94,11 @@ class BatchCreateRequest(BaseModel):
     resume_polling: bool = True
 
 
+class BaselineRequest(BaseModel):
+    batch_id: str = Field(min_length=1)
+    force: bool = False
+
+
 class PollingStatus(BaseModel):
     active: bool
     started_at: datetime | None = None

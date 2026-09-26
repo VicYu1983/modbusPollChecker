@@ -10,16 +10,27 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
 from .check_service import CheckService
-from .domain.models import BatchDetailResponse, BatchListResponse, CheckBatch
+from .domain.models import (
+    BatchComparison,
+    BatchDetailResponse,
+    BatchListResponse,
+    CheckBatch,
+    SiteBaseline,
+)
 from .repositories.sqlite_history import SqliteHistoryRepository
 from .schemas import (
     BatchCreateRequest,
+    BaselineRequest,
     CheckRequest,
     DeviceConfig,
     ErrorResponse,
     SiteConfig,
 )
 from .services.batch_service import BatchAlreadyRunningError, BatchService
+from .services.comparison_service import (
+    BaselineRequiresConfirmationError,
+    ComparisonService,
+)
 from .site_store import SiteStore
 
 
@@ -35,6 +46,7 @@ history = SqliteHistoryRepository(
     )
 )
 batch_service = BatchService(history, check_service.adapter)
+comparison_service = ComparisonService(history)
 
 
 @asynccontextmanager
@@ -199,6 +211,47 @@ def get_check_batch(batch_id: str) -> BatchDetailResponse:
         return batch_service.get_batch(batch_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail="batch not found") from error
+
+
+@app.get("/api/sites/{site_name}/baseline", response_model=SiteBaseline)
+def get_site_baseline(site_name: str) -> SiteBaseline:
+    baseline = history.get_baseline(site_name)
+    if baseline is None:
+        raise HTTPException(status_code=404, detail="baseline not found")
+    return baseline
+
+
+@app.put("/api/sites/{site_name}/baseline", response_model=SiteBaseline)
+def set_site_baseline(site_name: str, request: BaselineRequest) -> SiteBaseline:
+    try:
+        return comparison_service.set_baseline(
+            site_name,
+            request.batch_id,
+            force=request.force,
+        )
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="batch not found") from error
+    except BaselineRequiresConfirmationError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.delete("/api/sites/{site_name}/baseline", status_code=204)
+def clear_site_baseline(site_name: str) -> Response:
+    if not history.clear_baseline(site_name):
+        raise HTTPException(status_code=404, detail="baseline not found")
+    return Response(status_code=204)
+
+
+@app.get("/api/check/batches/{batch_id}/comparison", response_model=BatchComparison)
+def compare_check_batch(batch_id: str) -> BatchComparison:
+    try:
+        return comparison_service.compare(batch_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="batch not found") from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @app.get("/api/status")

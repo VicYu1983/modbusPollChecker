@@ -30,7 +30,16 @@ import {
   SaveOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
-import { api, type CheckResult, type DeviceConfig } from "./api/client";
+import {
+  api,
+  type BatchComparison,
+  type BatchDetail,
+  type CheckBatch,
+  type CheckResult,
+  type ComparisonStatus,
+  type DeviceConfig,
+  type SiteBaseline,
+} from "./api/client";
 import "./App.css";
 
 type DeviceStatus = "PASS" | "FAIL" | "TIMEOUT" | "CONFIG_ERROR" | "UNKNOWN";
@@ -47,6 +56,18 @@ const statusMeta: Record<DeviceStatus, { label: string; color: string }> = {
   TIMEOUT: { label: "逾時", color: "warning" },
   CONFIG_ERROR: { label: "設定錯誤", color: "error" },
   UNKNOWN: { label: "未檢查", color: "default" },
+};
+const comparisonMeta: Record<ComparisonStatus, { label: string; color: string }> = {
+  UNCHANGED_PASS: { label: "維持正常", color: "success" },
+  UNCHANGED_FAILURE: { label: "異常仍存在", color: "error" },
+  NEW_FAILURE: { label: "新增異常", color: "error" },
+  RECOVERED: { label: "已恢復", color: "success" },
+  VALUE_CHANGED: { label: "回傳值變更", color: "warning" },
+  LATENCY_DEGRADED: { label: "回應變慢", color: "warning" },
+  CONFIG_CHANGED: { label: "通訊設定變更", color: "processing" },
+  BASELINE_ONLY: { label: "本次未檢查", color: "default" },
+  NEW_DEVICE: { label: "新增設備", color: "processing" },
+  NO_BASELINE: { label: "尚無基準", color: "default" },
 };
 const defaults = {
   name: "",
@@ -132,6 +153,13 @@ function Dashboard() {
   const [form] = Form.useForm();
   const [checking, setChecking] = useState(false);
   const [pollingActive, setPollingActive] = useState(false);
+  const [batches, setBatches] = useState<CheckBatch[]>([]);
+  const [baseline, setBaseline] = useState<SiteBaseline | null>(null);
+  const [batchDetail, setBatchDetail] = useState<BatchDetail | null>(null);
+  const [comparison, setComparison] = useState<BatchComparison | null>(null);
+  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
+  const [batchStarting, setBatchStarting] = useState(false);
+  const [comparisonLoadingId, setComparisonLoadingId] = useState<string | null>(null);
   const { message } = AntApp.useApp();
   const counts = useMemo(
     () => ({
@@ -198,6 +226,47 @@ function Dashboard() {
       .catch(() => undefined);
   }, []);
   useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      api.listBatches(siteName).catch(() => null),
+      api.getBaseline(siteName).catch(() => null),
+    ]).then(([history, currentBaseline]) => {
+      if (cancelled) return;
+      setBatches(history?.items ?? []);
+      setBaseline(currentBaseline);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [siteName]);
+  useEffect(() => {
+    if (!activeBatchId) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const refreshBatch = async () => {
+      try {
+        const detail = await api.getBatch(activeBatchId);
+        if (cancelled) return;
+        setBatchDetail(detail);
+        if (detail.batch.status === "completed" || detail.batch.status === "failed") {
+          setActiveBatchId(null);
+          const history = await api.listBatches(siteName);
+          if (!cancelled) setBatches(history.items);
+          return;
+        }
+      } catch {
+        if (!cancelled) setActiveBatchId(null);
+        return;
+      }
+      timer = window.setTimeout(() => void refreshBatch(), 1000);
+    };
+    void refreshBatch();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [activeBatchId, siteName]);
+  useEffect(() => {
     if (!pollingActive) return;
     const refreshStatus = () => {
       api
@@ -248,6 +317,52 @@ function Dashboard() {
       message.error(
         error instanceof Error ? error.message : "自動檢查設定失敗"
       );
+    }
+  };
+  const startRegressionBatch = async () => {
+    setBatchStarting(true);
+    setComparison(null);
+    try {
+      const batch = await api.createBatch(siteName);
+      setBatchDetail({ batch, records: [], completed_device_count: 0 });
+      setActiveBatchId(batch.id);
+      message.info("回歸檢查已開始");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "回歸檢查啟動失敗");
+    } finally {
+      setBatchStarting(false);
+    }
+  };
+  const setBatchAsBaseline = (batch: CheckBatch) => {
+    const containsErrors =
+      batch.fail_count + batch.timeout_count + batch.config_error_count > 0;
+    Modal.confirm({
+      title: "設為案場基準",
+      content: containsErrors
+        ? "這個批次含有失敗、逾時或設定錯誤。仍要強制設為比較基準嗎？"
+        : `將 ${new Date(batch.started_at).toLocaleString()} 的完整檢查設為目前基準。`,
+      okText: containsErrors ? "仍要設為基準" : "設為基準",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          const saved = await api.setBaseline(siteName, batch.id, containsErrors);
+          setBaseline(saved);
+          message.success("案場基準已更新");
+        } catch (error) {
+          message.error(error instanceof Error ? error.message : "基準設定失敗");
+          throw error;
+        }
+      },
+    });
+  };
+  const compareBatch = async (batch: CheckBatch) => {
+    setComparisonLoadingId(batch.id);
+    try {
+      setComparison(await api.getComparison(batch.id));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "批次比較失敗");
+    } finally {
+      setComparisonLoadingId(null);
     }
   };
   const submit = async () => {
@@ -479,6 +594,89 @@ function Dashboard() {
           />
         </Space>
       ),
+    },
+  ];
+  const batchColumns = [
+    {
+      title: "檢查時間",
+      dataIndex: "started_at",
+      key: "started_at",
+      render: (value: string) => new Date(value).toLocaleString(),
+    },
+    {
+      title: "結果",
+      key: "summary",
+      render: (_: unknown, batch: CheckBatch) =>
+        `${batch.pass_count}/${batch.device_names.length} 通過 · ${batch.fail_count + batch.timeout_count + batch.config_error_count} 異常`,
+    },
+    {
+      title: "狀態",
+      dataIndex: "status",
+      key: "status",
+      render: (status: CheckBatch["status"]) =>
+        status === "completed" ? <Tag color="success">完成</Tag> : <Tag>{status}</Tag>,
+    },
+    {
+      title: "基準",
+      key: "baseline",
+      render: (_: unknown, batch: CheckBatch) =>
+        baseline?.baseline_batch_id === batch.id ? <Tag color="processing">目前基準</Tag> : null,
+    },
+    {
+      title: "操作",
+      key: "actions",
+      render: (_: unknown, batch: CheckBatch) => (
+        <Space size={4}>
+          <Button
+            type="link"
+            disabled={batch.status !== "completed"}
+            loading={comparisonLoadingId === batch.id}
+            onClick={() => void compareBatch(batch)}
+          >
+            比較基準
+          </Button>
+          <Button
+            type="link"
+            disabled={batch.status !== "completed" || batch.mode !== "full"}
+            onClick={() => setBatchAsBaseline(batch)}
+          >
+            設為基準
+          </Button>
+        </Space>
+      ),
+    },
+  ];
+  const comparisonColumns = [
+    { title: "設備", dataIndex: "device_name", key: "device_name" },
+    {
+      title: "差異",
+      dataIndex: "status",
+      key: "status",
+      render: (status: ComparisonStatus) => (
+        <Tag color={comparisonMeta[status].color}>{comparisonMeta[status].label}</Tag>
+      ),
+    },
+    {
+      title: "基準狀態 / 值",
+      key: "baseline",
+      render: (_: unknown, item: NonNullable<typeof comparison>["comparisons"][number]) =>
+        item.baseline
+          ? `${statusMeta[item.baseline.result.status].label} · ${item.baseline.result.values.join(", ") || "—"}`
+          : "—",
+    },
+    {
+      title: "本次狀態 / 值",
+      key: "current",
+      render: (_: unknown, item: NonNullable<typeof comparison>["comparisons"][number]) =>
+        item.current
+          ? `${statusMeta[item.current.result.status].label} · ${item.current.result.values.join(", ") || "—"}`
+          : "未檢查",
+    },
+    {
+      title: "耗時差",
+      dataIndex: "response_time_delta_ms",
+      key: "response_time_delta_ms",
+      render: (value: number | null) => value === null ? "—" : `${value > 0 ? "+" : ""}${value} ms`,
     },
   ];
   return (
@@ -734,6 +932,102 @@ function Dashboard() {
               </Button>
             </Form>
           </Card>
+        </section>
+        <section className="batch-history">
+          <Card
+            bordered={false}
+            title={
+              <div>
+                <span className="section-kicker">FIELD REGRESSION</span>
+                <h2>回歸檢查批次</h2>
+              </div>
+            }
+            extra={
+              <Button
+                type="primary"
+                icon={<ReloadOutlined />}
+                loading={batchStarting || activeBatchId !== null}
+                disabled={devices.filter((device) => device.enabled).length === 0}
+                onClick={() => void startRegressionBatch()}
+              >
+                開始回歸檢查
+              </Button>
+            }
+          >
+            <Alert
+              type={baseline ? "success" : "warning"}
+              showIcon
+              message={
+                baseline
+                  ? `目前基準：${new Date(baseline.updated_at).toLocaleString()}`
+                  : "尚未設定案場基準"
+              }
+              description={
+                baseline
+                  ? `基準批次 ${baseline.baseline_batch_id}；檢查完成後可比較本次結果。`
+                  : "先完成一次全案場檢查，再從批次歷史將合格批次設為基準。"
+              }
+              style={{ marginBottom: 16 }}
+            />
+            {batchDetail && (batchDetail.batch.status === "pending" || batchDetail.batch.status === "running") && (
+              <Alert
+                type="info"
+                showIcon
+                message="回歸檢查執行中"
+                description={`已完成 ${batchDetail.completed_device_count} / ${batchDetail.batch.device_names.length} 台設備`}
+                style={{ marginBottom: 16 }}
+              />
+            )}
+            {batchDetail?.batch.status === "failed" && (
+              <Alert
+                type="error"
+                showIcon
+                message="回歸檢查批次失敗"
+                description={batchDetail.batch.error_message || "批次執行失敗，請稍後重試。"}
+                style={{ marginBottom: 16 }}
+              />
+            )}
+            <Table
+              rowKey="id"
+              columns={batchColumns}
+              dataSource={batches}
+              pagination={{ pageSize: 5, hideOnSinglePage: true }}
+              size="small"
+              scroll={{ x: 720 }}
+              locale={{ emptyText: "尚無檢查批次" }}
+            />
+          </Card>
+          {comparison && (
+            <Card
+              bordered={false}
+              title={
+                <div>
+                  <span className="section-kicker">BASELINE COMPARISON</span>
+                  <h2>批次差異</h2>
+                </div>
+              }
+              style={{ marginTop: 16 }}
+            >
+              <Alert
+                type={comparison.baseline_batch_id ? "info" : "warning"}
+                showIcon
+                message={
+                  comparison.baseline_batch_id
+                    ? `比較基準批次 ${comparison.baseline_batch_id}`
+                    : "目前沒有基準，這次結果尚未進行前後比較。"
+                }
+                style={{ marginBottom: 16 }}
+              />
+              <Table
+                rowKey="device_name"
+                columns={comparisonColumns}
+                dataSource={comparison.comparisons}
+                pagination={{ pageSize: 10, hideOnSinglePage: true }}
+                size="small"
+                scroll={{ x: 760 }}
+              />
+            </Card>
+          )}
         </section>
       </main>
     </Layout>

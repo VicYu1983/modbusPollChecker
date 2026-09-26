@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from ..domain.models import BatchCounts, BatchStatus, CheckBatch, CheckRecord
+from ..domain.models import BatchCounts, BatchStatus, CheckBatch, CheckRecord, SiteBaseline
 from ..ports.history import BatchNotFoundError
 from ..schemas import CheckResult, DeviceConfig, SiteConfig
 
@@ -167,6 +167,45 @@ class SqliteHistoryRepository:
                 (batch_id,),
             ).fetchall()
         return [self._record_from_row(row) for row in rows]
+
+    def set_baseline(self, site_name: str, batch_id: str) -> SiteBaseline:
+        updated_at = datetime.now(timezone.utc)
+        with self._connection() as connection:
+            connection.execute(
+                """INSERT INTO site_baselines (site_name, baseline_batch_id, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(site_name) DO UPDATE SET
+                    baseline_batch_id = excluded.baseline_batch_id,
+                    updated_at = excluded.updated_at""",
+                (site_name, batch_id, updated_at.isoformat()),
+            )
+        return SiteBaseline(
+            site_name=site_name,
+            baseline_batch_id=batch_id,
+            updated_at=updated_at,
+        )
+
+    def get_baseline(self, site_name: str) -> SiteBaseline | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM site_baselines WHERE site_name = ?",
+                (site_name,),
+            ).fetchone()
+        if row is None:
+            return None
+        return SiteBaseline(
+            site_name=row["site_name"],
+            baseline_batch_id=row["baseline_batch_id"],
+            updated_at=row["updated_at"],
+        )
+
+    def clear_baseline(self, site_name: str) -> bool:
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM site_baselines WHERE site_name = ?",
+                (site_name,),
+            )
+        return cursor.rowcount > 0
 
     def fail_interrupted_batches(self) -> int:
         now = datetime.now(timezone.utc).isoformat()

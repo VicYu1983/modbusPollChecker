@@ -51,6 +51,35 @@ class SiteBaseline(BaseModel):
     updated_at: datetime
 
 
+ComparisonStatus = Literal[
+    "UNCHANGED_PASS",
+    "UNCHANGED_FAILURE",
+    "NEW_FAILURE",
+    "RECOVERED",
+    "VALUE_CHANGED",
+    "LATENCY_DEGRADED",
+    "CONFIG_CHANGED",
+    "BASELINE_ONLY",
+    "NEW_DEVICE",
+    "NO_BASELINE",
+]
+
+
+class DeviceComparison(BaseModel):
+    device_name: str
+    status: ComparisonStatus
+    current: CheckRecord | None = None
+    baseline: CheckRecord | None = None
+    response_time_delta_ms: int | None = None
+
+
+class BatchComparison(BaseModel):
+    batch_id: str
+    baseline_batch_id: str | None = None
+    baseline_set_at: datetime | None = None
+    comparisons: list[DeviceComparison]
+
+
 class BatchListResponse(BaseModel):
     items: list[CheckBatch]
     total: int

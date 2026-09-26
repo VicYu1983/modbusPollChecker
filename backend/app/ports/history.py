@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
-from ..domain.models import BatchCounts, BatchStatus, CheckBatch, CheckRecord
+from ..domain.models import BatchCounts, BatchStatus, CheckBatch, CheckRecord, SiteBaseline
 
 
 class BatchNotFoundError(LookupError):
@@ -42,5 +42,11 @@ class HistoryRepository(Protocol):
     def save_record(self, record: CheckRecord) -> None: ...
 
     def list_records(self, batch_id: str) -> list[CheckRecord]: ...
+
+    def set_baseline(self, site_name: str, batch_id: str) -> SiteBaseline: ...
+
+    def get_baseline(self, site_name: str) -> SiteBaseline | None: ...
+
+    def clear_baseline(self, site_name: str) -> bool: ...
 
     def fail_interrupted_batches(self) -> int: ...

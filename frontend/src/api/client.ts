@@ -36,6 +36,70 @@ export type PollingStatus = {
   last_poll_at: string | null
 }
 
+export type CheckBatch = {
+  id: string
+  site_name: string
+  mode: 'single' | 'full'
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  device_names: string[]
+  config_snapshot: SiteConfig
+  note: string | null
+  started_at: string
+  completed_at: string | null
+  pass_count: number
+  fail_count: number
+  timeout_count: number
+  config_error_count: number
+  unknown_count: number
+  error_message: string | null
+}
+
+export type CheckRecord = {
+  id: number | null
+  batch_id: string
+  result: CheckResult
+  device_snapshot: DeviceConfig
+}
+
+export type BatchDetail = {
+  batch: CheckBatch
+  records: CheckRecord[]
+  completed_device_count: number
+}
+
+export type SiteBaseline = {
+  site_name: string
+  baseline_batch_id: string
+  updated_at: string
+}
+
+export type ComparisonStatus =
+  | 'UNCHANGED_PASS'
+  | 'UNCHANGED_FAILURE'
+  | 'NEW_FAILURE'
+  | 'RECOVERED'
+  | 'VALUE_CHANGED'
+  | 'LATENCY_DEGRADED'
+  | 'CONFIG_CHANGED'
+  | 'BASELINE_ONLY'
+  | 'NEW_DEVICE'
+  | 'NO_BASELINE'
+
+export type DeviceComparison = {
+  device_name: string
+  status: ComparisonStatus
+  current: CheckRecord | null
+  baseline: CheckRecord | null
+  response_time_delta_ms: number | null
+}
+
+export type BatchComparison = {
+  batch_id: string
+  baseline_batch_id: string | null
+  baseline_set_at: string | null
+  comparisons: DeviceComparison[]
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
@@ -63,4 +127,18 @@ export const api = {
   startPolling: () => request<{ started: boolean; status: PollingStatus }>('/api/polling/start', { method: 'POST' }),
   stopPolling: () => request<{ stopped: boolean; status: PollingStatus }>('/api/polling/stop', { method: 'POST' }),
   getPollingStatus: () => request<PollingStatus>('/api/polling/status'),
+  createBatch: (siteName: string) => request<CheckBatch>('/api/check/batches', {
+    method: 'POST',
+    body: JSON.stringify({ site_name: siteName }),
+  }),
+  listBatches: (siteName: string) => request<{ items: CheckBatch[]; total: number }>(
+    `/api/check/batches?site_name=${encodeURIComponent(siteName)}&limit=20`,
+  ),
+  getBatch: (batchId: string) => request<BatchDetail>(`/api/check/batches/${encodeURIComponent(batchId)}`),
+  getComparison: (batchId: string) => request<BatchComparison>(`/api/check/batches/${encodeURIComponent(batchId)}/comparison`),
+  getBaseline: (siteName: string) => request<SiteBaseline>(`/api/sites/${encodeURIComponent(siteName)}/baseline`),
+  setBaseline: (siteName: string, batchId: string, force: boolean) => request<SiteBaseline>(
+    `/api/sites/${encodeURIComponent(siteName)}/baseline`,
+    { method: 'PUT', body: JSON.stringify({ batch_id: batchId, force }) },
+  ),
 }
