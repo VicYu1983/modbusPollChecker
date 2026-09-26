@@ -5,3 +5,4 @@
 .module-tabs { margin-bottom:24px; }.module-tabs .ant-tabs-nav { margin-bottom:24px; }
 .header-actions { display:flex; align-items:center; gap:10px; }.header-actions .ant-btn { flex:0 0 auto; }
 .regression-progress { margin:8px 0 20px; }.regression-progress-heading { display:flex; justify-content:space-between; gap:16px; color:var(--muted); font-size:13px; }.regression-progress-heading strong { color:var(--ink); }.health-summary { padding:16px 0; margin-bottom:12px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }.health-summary .ant-statistic-title { font-size:12px; }.health-summary .ant-statistic-content { font-size:20px; }.priority-anomalies { margin:8px 0 20px; }.diagnosis-suggestions { margin:0; padding-left:20px; color:var(--muted); }
+.workspace { width:100%; }

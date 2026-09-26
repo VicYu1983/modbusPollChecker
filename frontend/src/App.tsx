@@ -35,7 +35,6 @@ import {
 } from "@ant-design/icons";
 import {
   api,
-  type BatchComparison,
   type BatchDetail,
   type CheckBatch,
   type CheckResult,
@@ -170,7 +169,6 @@ function Dashboard() {
   const [batchTotal, setBatchTotal] = useState(0);
   const [baseline, setBaseline] = useState<SiteBaseline | null>(null);
   const [batchDetail, setBatchDetail] = useState<BatchDetail | null>(null);
-  const [comparison, setComparison] = useState<BatchComparison | null>(null);
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [batchStarting, setBatchStarting] = useState(false);
   const [batchNote, setBatchNote] = useState("");
@@ -344,7 +342,6 @@ function Dashboard() {
   };
   const startRegressionBatch = async () => {
     setBatchStarting(true);
-    setComparison(null);
     try {
       const batch = await api.createBatch(siteName, batchNote.trim());
       setBatchDetail({
@@ -401,12 +398,7 @@ function Dashboard() {
   const compareBatch = async (batch: CheckBatch) => {
     setComparisonLoadingId(batch.id);
     try {
-      const [detail, batchComparison] = await Promise.all([
-        api.getBatch(batch.id),
-        api.getComparison(batch.id),
-      ]);
-      setBatchDetail(detail);
-      setComparison(batchComparison);
+      setBatchDetail(await api.getBatch(batch.id));
     } catch (error) {
       message.error(error instanceof Error ? error.message : "批次比較失敗");
     } finally {
@@ -746,39 +738,6 @@ function Dashboard() {
           </Button>
         </Space>
       ),
-    },
-  ];
-  const comparisonColumns = [
-    { title: "設備", dataIndex: "device_name", key: "device_name" },
-    {
-      title: "差異",
-      dataIndex: "status",
-      key: "status",
-      render: (status: ComparisonStatus) => (
-        <Tag color={comparisonMeta[status].color}>{comparisonMeta[status].label}</Tag>
-      ),
-    },
-    {
-      title: "基準狀態 / 值",
-      key: "baseline",
-      render: (_: unknown, item: NonNullable<typeof comparison>["comparisons"][number]) =>
-        item.baseline
-          ? `${statusMeta[item.baseline.result.status].label} · ${item.baseline.result.values.join(", ") || "—"}`
-          : "—",
-    },
-    {
-      title: "本次狀態 / 值",
-      key: "current",
-      render: (_: unknown, item: NonNullable<typeof comparison>["comparisons"][number]) =>
-        item.current
-          ? `${statusMeta[item.current.result.status].label} · ${item.current.result.values.join(", ") || "—"}`
-          : "未檢查",
-    },
-    {
-      title: "耗時差",
-      dataIndex: "response_time_delta_ms",
-      key: "response_time_delta_ms",
-      render: (value: number | null) => value === null ? "—" : `${value > 0 ? "+" : ""}${value} ms`,
     },
   ];
   const anomalyRecords = (batchDetail?.records ?? [])
@@ -1254,37 +1213,6 @@ function Dashboard() {
               locale={{ emptyText: "尚無檢查批次" }}
             />
           </Card>
-          {comparison && (
-            <Card
-              bordered={false}
-              title={
-                <div>
-                  <span className="section-kicker">BASELINE COMPARISON</span>
-                  <h2>批次差異</h2>
-                </div>
-              }
-              style={{ marginTop: 16 }}
-            >
-              <Alert
-                type={comparison.baseline_batch_id ? "info" : "warning"}
-                showIcon
-                message={
-                  comparison.baseline_batch_id
-                    ? `比較基準批次 ${comparison.baseline_batch_id}`
-                    : "目前沒有基準，這次結果尚未進行前後比較。"
-                }
-                style={{ marginBottom: 16 }}
-              />
-              <Table
-                rowKey="device_name"
-                columns={comparisonColumns}
-                dataSource={comparison.comparisons}
-                pagination={{ pageSize: 10, hideOnSinglePage: true }}
-                size="small"
-                scroll={{ x: 760 }}
-              />
-            </Card>
-          )}
         </section>
           </>
         )}
