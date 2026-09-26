@@ -42,16 +42,9 @@ import {
   type DeviceConfig,
   type SiteBaseline,
 } from "./api/client";
+import { toConfig, toDevice, type Device, type DeviceStatus } from "./api/mappers";
 import "./App.css";
 
-type DeviceStatus = "PASS" | "FAIL" | "TIMEOUT" | "CONFIG_ERROR" | "UNKNOWN";
-type Device = DeviceConfig & {
-  status: DeviceStatus;
-  lastChecked: string;
-  values?: Array<number | boolean>;
-  elapsedMs?: number;
-  error?: string;
-};
 const statusMeta: Record<DeviceStatus, { label: string; color: string }> = {
   PASS: { label: "正常", color: "success" },
   FAIL: { label: "失敗", color: "error" },
@@ -185,25 +178,6 @@ function Dashboard() {
     [devices]
   );
 
-  const toDevice = (device: DeviceConfig, result?: CheckResult): Device => ({
-    ...device,
-    status: result?.status ?? "UNKNOWN",
-    lastChecked: result
-      ? new Date(result.timestamp).toLocaleString()
-      : "尚未檢查",
-    values: result?.values,
-    elapsedMs: result?.elapsed_ms,
-    error: result?.error_message ?? undefined,
-  });
-  const toConfig = (device: Device): DeviceConfig => {
-    const config = { ...device } as Partial<Device>;
-    delete config.status;
-    delete config.lastChecked;
-    delete config.values;
-    delete config.elapsedMs;
-    delete config.error;
-    return config as DeviceConfig;
-  };
   const saveSiteName = async () => {
     const trimmed = siteName.trim();
     if (!trimmed) return;
@@ -902,7 +876,7 @@ function Dashboard() {
             onChange={(e) => setSiteName(e.target.value)}
             onBlur={saveSiteName}
             onPressEnter={saveSiteName}
-            bordered={false}
+            variant="borderless"
           />
         </div>
         <div className="header-actions">
@@ -958,7 +932,7 @@ function Dashboard() {
         </section>
         <Row gutter={[16, 16]} className="metrics">
           <Col xs={8}>
-            <Card bordered={false}>
+            <Card variant="borderless">
               <Statistic
                 title="已登錄設備"
                 value={counts.total}
@@ -968,7 +942,7 @@ function Dashboard() {
             </Card>
           </Col>
           <Col xs={8}>
-            <Card bordered={false}>
+            <Card variant="borderless">
               <Statistic
                 title="目前正常"
                 value={counts.healthy}
@@ -978,7 +952,7 @@ function Dashboard() {
             </Card>
           </Col>
           <Col xs={8}>
-            <Card bordered={false}>
+            <Card variant="borderless">
               <Statistic
                 title="需要注意"
                 value={counts.attention}
@@ -991,7 +965,7 @@ function Dashboard() {
         <section className="content-grid">
           <Card
             className="status-panel"
-            bordered={false}
+            variant="borderless"
             title={
               <div>
                 <span className="section-kicker">LIVE STATUS</span>
@@ -1021,20 +995,24 @@ function Dashboard() {
               className="local-alert"
               type="info"
               showIcon
-              message={pollingActive ? "自動檢查中" : "目前為本機模式"}
+              title={pollingActive ? "自動檢查中" : "目前為本機模式"}
               description="檢查請求會由本機 Python API 轉送至現場設備。"
             />
             <Table
               rowKey="name"
               columns={columns}
               dataSource={devices}
-              pagination={false}
+              pagination={{
+                pageSize: 50,
+                hideOnSinglePage: true,
+                showSizeChanger: false,
+              }}
               scroll={{ x: 700 }}
             />
           </Card>
           <Card
             className="quick-panel"
-            bordered={false}
+            variant="borderless"
             title={
               <div>
                 <span className="section-kicker">QUICK SETUP</span>
@@ -1174,7 +1152,7 @@ function Dashboard() {
         </section>
         <section className="batch-history">
           <Card
-            bordered={false}
+            variant="borderless"
             title={
               <div>
                 <span className="section-kicker">FIELD REGRESSION</span>
@@ -1206,7 +1184,7 @@ function Dashboard() {
             <Alert
               type={baseline ? "success" : "warning"}
               showIcon
-              message={
+              title={
                 baseline
                   ? `目前基準：${new Date(baseline.updated_at).toLocaleString()}`
                   : "尚未設定案場基準"
@@ -1266,7 +1244,7 @@ function Dashboard() {
               <Alert
                 type="error"
                 showIcon
-                message="回歸檢查批次失敗"
+                title="回歸檢查批次失敗"
                 description={batchDetail.batch.error_message || "批次執行失敗，請稍後重試。"}
                 style={{ marginBottom: 16 }}
               />
@@ -1275,7 +1253,7 @@ function Dashboard() {
               <Alert
                 type="warning"
                 showIcon
-                message="回歸檢查已取消"
+                title="回歸檢查已取消"
                 description="已停止尚未開始的設備檢查；取消前已完成或正在執行的結果仍會保留在批次中。"
                 style={{ marginBottom: 16 }}
               />

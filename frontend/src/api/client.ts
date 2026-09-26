@@ -109,21 +109,6 @@ export type ComparisonStatus =
   | 'NEW_DEVICE'
   | 'NO_BASELINE'
 
-export type DeviceComparison = {
-  device_name: string
-  status: ComparisonStatus
-  current: CheckRecord | null
-  baseline: CheckRecord | null
-  response_time_delta_ms: number | null
-}
-
-export type BatchComparison = {
-  batch_id: string
-  baseline_batch_id: string | null
-  baseline_set_at: string | null
-  comparisons: DeviceComparison[]
-}
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
@@ -167,7 +152,6 @@ export const api = {
     `/api/check/batches/${encodeURIComponent(batchId)}`,
     { method: 'DELETE' },
   ),
-  getComparison: (batchId: string) => request<BatchComparison>(`/api/check/batches/${encodeURIComponent(batchId)}/comparison`),
   getReportUrl: (batchId: string, format: 'csv' | 'html') =>
     `/api/check/batches/${encodeURIComponent(batchId)}/report?format=${format}`,
   getBaseline: (siteName: string) => request<SiteBaseline>(`/api/sites/${encodeURIComponent(siteName)}/baseline`),
