@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from urllib.parse import quote
 
 from .check_service import CheckService
+from .network_adapter import NetworkAdapter
 from .domain.models import (
     BatchComparison,
     BatchDetailResponse,
@@ -27,6 +29,8 @@ from .schemas import (
     CheckRequest,
     DeviceConfig,
     ErrorResponse,
+    NetworkCheckRequest,
+    NetworkCheckResult,
     SiteConfig,
 )
 from .services.batch_service import BatchAlreadyRunningError, BatchService
@@ -47,6 +51,7 @@ from .site_store import SiteStore
 ROOT = Path(__file__).resolve().parents[2]
 store = SiteStore(ROOT / "data")
 check_service = CheckService()
+network_adapter = NetworkAdapter()
 history = SqliteHistoryRepository(
     Path(
         os.environ.get(
@@ -173,6 +178,29 @@ def check_devices(request: CheckRequest) -> list[dict[str, object]]:
     if request.device_name and not any(device.name == request.device_name for device in config.devices):
         raise HTTPException(status_code=404, detail="device not found")
     return [result.model_dump(mode="json") for result in check_service.check(config, request.device_name)]
+
+
+@app.post("/api/network/check/one", response_model=NetworkCheckResult)
+async def check_network_device(request: NetworkCheckRequest) -> NetworkCheckResult:
+    config = store.load()
+    device = next((item for item in config.devices if item.name == request.device_name), None)
+    if device is None:
+        raise HTTPException(status_code=404, detail="device not found")
+    if not device.enabled:
+        raise HTTPException(status_code=422, detail="device is disabled")
+
+    result = await network_adapter.check_device(device, request.mode)
+    if request.mode == "full_stack" and result.tcp_state == "OPEN":
+        modbus_result = await asyncio.to_thread(check_service.adapter.check_device, device)
+        result.modbus_status = modbus_result.status
+        result.modbus_error_type = modbus_result.error_type
+        result.modbus_error_message = modbus_result.error_message
+        if modbus_result.status != "PASS":
+            result.overall_status = modbus_result.status
+            result.failure_stage = "MODBUS"
+            result.error_type = modbus_result.error_type
+            result.error_message = modbus_result.error_message
+    return result
 
 
 @app.post(

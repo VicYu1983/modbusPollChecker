@@ -9,6 +9,10 @@ from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, field_validato
 FunctionCode = Literal["01", "02", "03", "04"]
 AddressMode = Literal["dec", "hex"]
 Status = Literal["PASS", "FAIL", "TIMEOUT", "CONFIG_ERROR", "UNKNOWN"]
+NetworkMode = Literal["network_only", "network_and_port", "full_stack"]
+PingState = Literal["PASS", "TIMEOUT", "UNREACHABLE", "NOT_SUPPORTED", "UNKNOWN"]
+TcpState = Literal["OPEN", "CLOSED", "TIMEOUT", "UNREACHABLE", "NOT_TESTED"]
+NetworkStatus = Literal["PASS", "FAIL", "TIMEOUT", "CONFIG_ERROR", "PARTIAL", "UNKNOWN"]
 
 
 class DeviceConfig(BaseModel):
@@ -28,6 +32,17 @@ class DeviceConfig(BaseModel):
     scan_rate_ms: int = Field(default=1000, ge=0)
     delay_between_polls_ms: int = Field(default=20, ge=0)
     enabled: bool = True
+    network_check_enabled: bool = True
+    ping_enabled: bool = True
+    ping_attempts: int = Field(default=4, ge=1, le=20)
+    ping_timeout_ms: int = Field(default=1000, ge=1, le=60000)
+    ping_interval_ms: int = Field(default=200, ge=0, le=60000)
+    tcp_check_enabled: bool = True
+    tcp_port: int | None = Field(default=None, ge=1, le=65535)
+    tcp_timeout_ms: int = Field(default=2000, ge=1, le=60000)
+    skip_when_ping_failed: bool = False
+    max_latency_ms: int | None = Field(default=None, ge=0)
+    max_loss_percent: float | None = Field(default=None, ge=0, le=100)
 
     @field_validator("name")
     @classmethod
@@ -85,6 +100,35 @@ class CheckResult(BaseModel):
 
 class CheckRequest(BaseModel):
     device_name: str | None = None
+
+
+class NetworkCheckRequest(BaseModel):
+    device_name: str = Field(min_length=1, max_length=100)
+    mode: NetworkMode = "network_and_port"
+
+
+class NetworkCheckResult(BaseModel):
+    device_name: str
+    target_ip: IPvAnyAddress
+    timestamp: datetime
+    mode: NetworkMode
+    ping_state: PingState
+    ping_attempts: int = Field(ge=0)
+    ping_success_count: int = Field(ge=0)
+    ping_loss_percent: float | None = Field(default=None, ge=0, le=100)
+    ping_min_ms: float | None = Field(default=None, ge=0)
+    ping_avg_ms: float | None = Field(default=None, ge=0)
+    ping_max_ms: float | None = Field(default=None, ge=0)
+    tcp_port: int | None = None
+    tcp_connect_ms: float | None = Field(default=None, ge=0)
+    tcp_state: TcpState
+    overall_status: NetworkStatus
+    failure_stage: Literal["CONFIG", "PING", "TCP", "MODBUS"] | None = None
+    error_type: str | None = None
+    error_message: str | None = None
+    modbus_status: Status | None = None
+    modbus_error_type: str | None = None
+    modbus_error_message: str | None = None
 
 
 class BatchCreateRequest(BaseModel):
