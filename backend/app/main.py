@@ -20,6 +20,11 @@ from .domain.models import (
     CheckBatch,
     SiteBaseline,
 )
+from .domain.network_models import (
+    NetworkBatch,
+    NetworkBatchDetailResponse,
+    NetworkBatchListResponse,
+)
 from .repositories.sqlite_history import SqliteHistoryRepository
 from .renderers.csv_report import CsvReportRenderer
 from .renderers.html_report import HtmlReportRenderer
@@ -29,11 +34,16 @@ from .schemas import (
     CheckRequest,
     DeviceConfig,
     ErrorResponse,
+    NetworkBatchCreateRequest,
     NetworkCheckRequest,
     NetworkCheckResult,
     SiteConfig,
 )
 from .services.batch_service import BatchAlreadyRunningError, BatchService
+from .services.network_batch_service import (
+    NetworkBatchAlreadyRunningError,
+    NetworkBatchService,
+)
 from .ports.history import (
     BatchIsBaselineError,
     BatchNotDeletableError,
@@ -60,6 +70,11 @@ history = SqliteHistoryRepository(
         )
     )
 )
+network_batch_service = NetworkBatchService(
+    history,
+    network_adapter,
+    modbus_checker=check_service.adapter,
+)
 comparison_service = ComparisonService(history)
 batch_service = BatchService(
     history,
@@ -80,6 +95,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        network_batch_service.shutdown()
         batch_service.shutdown()
         check_service.shutdown()
 
@@ -201,6 +217,59 @@ async def check_network_device(request: NetworkCheckRequest) -> NetworkCheckResu
             result.error_type = modbus_result.error_type
             result.error_message = modbus_result.error_message
     return result
+
+
+@app.post(
+    "/api/network/check",
+    response_model=NetworkBatch,
+    status_code=202,
+)
+def create_network_check_batch(request: NetworkBatchCreateRequest) -> NetworkBatch:
+    try:
+        config = store.load(request.site_name)
+        if request.site_name and config.site_name != request.site_name:
+            raise HTTPException(status_code=404, detail="site not found")
+        return network_batch_service.start_batch(
+            config,
+            device_names=request.device_names,
+            mode=request.mode,
+            max_concurrency=request.max_concurrency,
+        )
+    except NetworkBatchAlreadyRunningError as error:
+        raise HTTPException(status_code=409, detail="a network batch is already running") from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get("/api/network/batches", response_model=NetworkBatchListResponse)
+def list_network_check_batches(
+    site_name: str | None = None,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> NetworkBatchListResponse:
+    items, total = history.list_network_batches(site_name, offset=offset, limit=limit)
+    return NetworkBatchListResponse(items=items, total=total)
+
+
+@app.get("/api/network/batches/{batch_id}", response_model=NetworkBatchDetailResponse)
+def get_network_check_batch(batch_id: str) -> NetworkBatchDetailResponse:
+    try:
+        return network_batch_service.get_batch(batch_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="network batch not found") from error
+
+
+@app.post("/api/network/batches/{batch_id}/cancel", response_model=NetworkBatch)
+def cancel_network_check_batch(batch_id: str) -> NetworkBatch:
+    try:
+        batch = history.get_network_batch(batch_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="network batch not found") from error
+    if batch.status not in {"pending", "running"}:
+        raise HTTPException(status_code=409, detail="network batch is no longer running")
+    if not network_batch_service.cancel_batch(batch_id):
+        raise HTTPException(status_code=409, detail="network batch could not be cancelled")
+    return history.get_network_batch(batch_id)
 
 
 @app.post(

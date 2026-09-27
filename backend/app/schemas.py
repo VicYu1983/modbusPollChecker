@@ -107,6 +107,13 @@ class NetworkCheckRequest(BaseModel):
     mode: NetworkMode = "network_and_port"
 
 
+class NetworkBatchCreateRequest(BaseModel):
+    site_name: str | None = None
+    device_names: list[str] | None = None
+    mode: NetworkMode = "network_and_port"
+    max_concurrency: int = Field(default=20, ge=1, le=50)
+
+
 class NetworkCheckResult(BaseModel):
     device_name: str
     target_ip: IPvAnyAddress

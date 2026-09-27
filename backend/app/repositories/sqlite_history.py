@@ -8,12 +8,18 @@ from pathlib import Path
 from typing import Iterator
 
 from ..domain.models import BatchCounts, BatchStatus, CheckBatch, CheckRecord, SiteBaseline
+from ..domain.network_models import (
+    NetworkBatch,
+    NetworkBatchCounts,
+    NetworkBatchStatus,
+    NetworkCheckRecord,
+)
 from ..ports.history import (
     BatchIsBaselineError,
     BatchNotDeletableError,
     BatchNotFoundError,
 )
-from ..schemas import CheckResult, DeviceConfig, SiteConfig
+from ..schemas import CheckResult, DeviceConfig, NetworkCheckResult, SiteConfig
 
 
 class SqliteHistoryRepository:
@@ -190,6 +196,131 @@ class SqliteHistoryRepository:
                 ),
             )
 
+    def create_network_batch(self, batch: NetworkBatch) -> None:
+        with self._connection() as connection:
+            connection.execute(
+                """INSERT INTO network_batches (
+                    id, site_name, mode, status, device_names_json,
+                    config_snapshot_json, max_concurrency, started_at, completed_at,
+                    completed_device_count, pass_count, fail_count, timeout_count,
+                    config_error_count, partial_count, unknown_count, error_message
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    batch.id,
+                    batch.site_name,
+                    batch.mode,
+                    batch.status,
+                    json.dumps(batch.device_names, ensure_ascii=False),
+                    batch.config_snapshot.model_dump_json(),
+                    batch.max_concurrency,
+                    batch.started_at.isoformat(),
+                    batch.completed_at.isoformat() if batch.completed_at else None,
+                    batch.completed_device_count,
+                    batch.pass_count,
+                    batch.fail_count,
+                    batch.timeout_count,
+                    batch.config_error_count,
+                    batch.partial_count,
+                    batch.unknown_count,
+                    batch.error_message,
+                ),
+            )
+
+    def update_network_batch_status(
+        self,
+        batch_id: str,
+        status: NetworkBatchStatus,
+        *,
+        completed_at: datetime | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        with self._connection() as connection:
+            cursor = connection.execute(
+                """UPDATE network_batches SET status = ?, completed_at = ?, error_message = ?
+                    WHERE id = ?""",
+                (
+                    status,
+                    completed_at.isoformat() if completed_at else None,
+                    error_message,
+                    batch_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                raise BatchNotFoundError(batch_id)
+
+    def get_network_batch(self, batch_id: str) -> NetworkBatch:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM network_batches WHERE id = ?", (batch_id,)
+            ).fetchone()
+        if row is None:
+            raise BatchNotFoundError(batch_id)
+        return self._network_batch_from_row(row)
+
+    def list_network_batches(
+        self,
+        site_name: str | None,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[NetworkBatch], int]:
+        where = " WHERE site_name = ?" if site_name else ""
+        parameters: tuple[object, ...] = (site_name,) if site_name else ()
+        with self._connection() as connection:
+            total = connection.execute(
+                "SELECT COUNT(*) FROM network_batches" + where, parameters
+            ).fetchone()[0]
+            rows = connection.execute(
+                "SELECT * FROM network_batches"
+                + where
+                + " ORDER BY started_at DESC LIMIT ? OFFSET ?",
+                (*parameters, limit, offset),
+            ).fetchall()
+        return [self._network_batch_from_row(row) for row in rows], total
+
+    def save_network_result(
+        self,
+        record: NetworkCheckRecord,
+        counts: NetworkBatchCounts,
+    ) -> None:
+        with self._connection() as connection:
+            connection.execute(
+                """INSERT INTO network_results (
+                    batch_id, device_name, result_json, device_snapshot_json
+                ) VALUES (?, ?, ?, ?)""",
+                (
+                    record.batch_id,
+                    record.result.device_name,
+                    record.result.model_dump_json(),
+                    record.device_snapshot.model_dump_json(),
+                ),
+            )
+            cursor = connection.execute(
+                """UPDATE network_batches SET completed_device_count = completed_device_count + 1,
+                    pass_count = ?, fail_count = ?, timeout_count = ?,
+                    config_error_count = ?, partial_count = ?, unknown_count = ?
+                    WHERE id = ?""",
+                (
+                    counts.pass_count,
+                    counts.fail_count,
+                    counts.timeout_count,
+                    counts.config_error_count,
+                    counts.partial_count,
+                    counts.unknown_count,
+                    record.batch_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                raise BatchNotFoundError(record.batch_id)
+
+    def list_network_results(self, batch_id: str) -> list[NetworkCheckRecord]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM network_results WHERE batch_id = ? ORDER BY id",
+                (batch_id,),
+            ).fetchall()
+        return [self._network_result_from_row(row) for row in rows]
+
     def list_records(self, batch_id: str) -> list[CheckRecord]:
         with self._connection() as connection:
             rows = connection.execute(
@@ -240,13 +371,50 @@ class SqliteHistoryRepository:
     def fail_interrupted_batches(self) -> int:
         now = datetime.now(timezone.utc).isoformat()
         with self._connection() as connection:
-            cursor = connection.execute(
+            modbus_cursor = connection.execute(
                 """UPDATE check_batches SET status = 'failed', completed_at = ?,
                     error_message = 'interrupted by shutdown'
                     WHERE status IN ('pending', 'running')""",
                 (now,),
             )
-        return cursor.rowcount
+            network_cursor = connection.execute(
+                """UPDATE network_batches SET status = 'failed', completed_at = ?,
+                    error_message = 'interrupted by shutdown'
+                    WHERE status IN ('pending', 'running')""",
+                (now,),
+            )
+        return modbus_cursor.rowcount + network_cursor.rowcount
+
+    @staticmethod
+    def _network_batch_from_row(row: sqlite3.Row) -> NetworkBatch:
+        return NetworkBatch(
+            id=row["id"],
+            site_name=row["site_name"],
+            mode=row["mode"],
+            status=row["status"],
+            device_names=json.loads(row["device_names_json"]),
+            config_snapshot=SiteConfig.model_validate_json(row["config_snapshot_json"]),
+            max_concurrency=row["max_concurrency"],
+            started_at=row["started_at"],
+            completed_at=row["completed_at"],
+            completed_device_count=row["completed_device_count"],
+            pass_count=row["pass_count"],
+            fail_count=row["fail_count"],
+            timeout_count=row["timeout_count"],
+            config_error_count=row["config_error_count"],
+            partial_count=row["partial_count"],
+            unknown_count=row["unknown_count"],
+            error_message=row["error_message"],
+        )
+
+    @staticmethod
+    def _network_result_from_row(row: sqlite3.Row) -> NetworkCheckRecord:
+        return NetworkCheckRecord(
+            id=row["id"],
+            batch_id=row["batch_id"],
+            result=NetworkCheckResult.model_validate_json(row["result_json"]),
+            device_snapshot=DeviceConfig.model_validate_json(row["device_snapshot_json"]),
+        )
 
     @staticmethod
     def _batch_from_row(row: sqlite3.Row) -> CheckBatch:
