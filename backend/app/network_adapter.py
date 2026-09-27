@@ -142,11 +142,11 @@ class NetworkAdapter:
                     "UNKNOWN", len(latencies), tuple(latencies), "ping_error", "無法啟動 Ping 測試。"
                 )
 
-            output = (stdout + b"\n" + stderr).decode(errors="replace")
+            output = self._decode_ping_output(stdout + b"\n" + stderr)
             parsed = self._parse_ping_output(output)
-            if parsed:
+            if parsed and not self._is_unreachable(output, str(device.ip)):
                 latencies.extend(parsed)
-            elif self._is_unreachable(output):
+            elif self._is_unreachable(output, str(device.ip)):
                 saw_unreachable = True
             elif process.returncode == 0:
                 saw_unknown_output = True
@@ -175,6 +175,16 @@ class NetworkAdapter:
                 pass
 
     @staticmethod
+    def _decode_ping_output(raw: bytes) -> str:
+        # Windows ping 使用主控台代碼頁（例如 cp950），不是 UTF-8。
+        for encoding in ("utf-8", "cp950", "cp936", "mbcs"):
+            try:
+                return raw.decode(encoding)
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return raw.decode("utf-8", errors="replace")
+
+    @staticmethod
     def _ping_arguments(target_ip: str, timeout_ms: int) -> tuple[str, ...]:
         if sys.platform == "win32":
             return ("-n", "1", "-w", str(timeout_ms), target_ip)
@@ -190,15 +200,24 @@ class NetworkAdapter:
         return [float(value.replace(",", ".")) for value in matches]
 
     @staticmethod
-    def _is_unreachable(output: str) -> bool:
-        return bool(
-            re.search(
-                r"destination\s+(?:host|net(?:work)?)\s+unreachable|"
-                r"目的(?:主機|地主機)(?:無法|不可)連線|一般性錯誤",
-                output,
-                flags=re.IGNORECASE,
-            )
+    def _is_unreachable(output: str, target_ip: str | None = None) -> bool:
+        if re.search(
+            r"destination\s+(?:host|net(?:work)?|port)\s+unreachable|"
+            r"目的(?:地)?(?:主機|地主機|連接埠|網路)(?:無法|不可)連線|"
+            r"無法連線到目的|一般性錯誤",
+            output,
+            flags=re.IGNORECASE,
+        ):
+            return True
+        if target_ip is None:
+            return False
+        # Windows 會由路由器回覆 ICMP 錯誤，來源 IP 與目標不同即代表未真正到達目標。
+        replies = re.findall(
+            r"(?:reply from|回覆自)\s*([0-9]{1,3}(?:\.[0-9]{1,3}){3})",
+            output,
+            flags=re.IGNORECASE,
         )
+        return bool(replies) and all(reply != target_ip for reply in replies)
 
     async def _test_tcp(self, host: str, port: int, timeout_ms: int) -> TcpProbeResult:
         started = monotonic()

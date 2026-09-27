@@ -38,6 +38,31 @@ class NetworkAdapterTests(unittest.IsolatedAsyncioTestCase):
                 ("-n", "1", "-w", "750", "192.0.2.10"),
             )
 
+    def test_chinese_port_unreachable_reply_is_detected(self) -> None:
+        output = (
+            "Ping 192.168.30.5 (使用 32 位元組的資料):\n"
+            "回覆自 192.168.0.1: 目的地連接埠無法連線。\n"
+            "封包: 已傳送 = 1，已收到 = 1, 已遺失 = 0 (0% 遺失)，"
+        )
+        self.assertTrue(self.adapter._is_unreachable(output, "192.168.30.5"))
+
+    def test_reply_from_other_host_is_unreachable(self) -> None:
+        output = "Reply from 192.168.0.1: Destination port unreachable."
+        self.assertTrue(self.adapter._is_unreachable(output, "192.168.30.5"))
+
+    def test_reply_from_target_is_reachable(self) -> None:
+        output = "Reply from 192.168.30.5: time=2ms TTL=64"
+        self.assertFalse(self.adapter._is_unreachable(output, "192.168.30.5"))
+
+    def test_big5_ping_output_is_decoded_and_detected(self) -> None:
+        raw = (
+            "Ping 192.168.30.5 (使用 32 位元組的資料):\r\n"
+            "回覆自 192.168.0.1: 目的地連接埠無法連線。\r\n"
+        ).encode("cp950")
+        decoded = self.adapter._decode_ping_output(raw)
+        self.assertIn("目的地連接埠無法連線", decoded)
+        self.assertTrue(self.adapter._is_unreachable(decoded, "192.168.30.5"))
+
     def test_legacy_device_config_gets_network_defaults(self) -> None:
         device = DeviceConfig.model_validate({"name": "Legacy", "ip": "192.0.2.1"})
         self.assertTrue(device.enabled)

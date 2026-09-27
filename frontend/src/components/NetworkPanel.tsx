@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Alert, App as AntApp, Button, Col, Collapse, Input, InputNumber, Pagination, Progress, Row, Select, Space, Statistic, Table, Tag, Tooltip, Typography } from "antd";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Alert, App as AntApp, Button, Col, Collapse, Input, InputNumber, Pagination, Progress, Row, Select, Space, Statistic, Switch, Table, Tag, Tooltip, Typography } from "antd";
 import type { FormInstance, TableColumnsType } from "antd";
 import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, ReloadOutlined, StopOutlined } from "@ant-design/icons";
 import {
@@ -92,6 +92,10 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
   const [singleResults, setSingleResults] = useState<Record<string, NetworkCheckResult>>({});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<NetworkCheckStatus | "ALL">("ALL");
+  const [autoCheck, setAutoCheck] = useState(false);
+  const [autoIntervalMs, setAutoIntervalMs] = useState(5000);
+  const [autoChecking, setAutoChecking] = useState(false);
+  const autoCheckRef = useRef(false);
 
   const availableDevices = devices.filter((device) => device.enabled);
   const completedBatchId = batchDetail?.batch.status === "completed"
@@ -240,6 +244,49 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
       setCheckingDevice(null);
     }
   };
+
+  const runAutoCheck = async () => {
+    if (autoChecking) return;
+    setAutoChecking(true);
+    try {
+      const results = await Promise.allSettled(
+        availableDevices.map((device) => api.checkDevice(device.name)),
+      );
+      setSingleResults((current) => {
+        const next = { ...current };
+        results.forEach((outcome, index) => {
+          if (outcome.status === "fulfilled") {
+            next[availableDevices[index].name] = outcome.value;
+          }
+        });
+        return next;
+      });
+    } finally {
+      setAutoChecking(false);
+    }
+  };
+
+  useEffect(() => {
+    autoCheckRef.current = autoCheck;
+  }, [autoCheck]);
+
+  useEffect(() => {
+    if (!autoCheck) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const tick = async () => {
+      if (cancelled) return;
+      await runAutoCheck();
+      if (cancelled || !autoCheckRef.current) return;
+      timer = window.setTimeout(() => void tick(), autoIntervalMs);
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoCheck, autoIntervalMs, siteName, devices.length]);
 
   const cancelBatch = async (batch: NetworkBatch) => {
     setCancelling(true);
@@ -513,6 +560,32 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
             onChange={(value) => setMaxConcurrency(value ?? 1)}
             addonAfter="台"
           />
+        </div>
+        <div className="network-control-field">
+          <label htmlFor="network-auto-interval">自動檢查間隔</label>
+          <InputNumber
+            id="network-auto-interval"
+            min={1}
+            max={3600}
+            value={Math.round(autoIntervalMs / 1000)}
+            onChange={(value) => setAutoIntervalMs((value ?? 5) * 1000)}
+            addonAfter="秒"
+            disabled={autoCheck}
+          />
+        </div>
+        <div className="network-control-field">
+          <label htmlFor="network-auto">自動定時檢查</label>
+          <Space>
+            <Switch
+              id="network-auto"
+              checked={autoCheck}
+              loading={autoChecking}
+              onChange={setAutoCheck}
+              checkedChildren="自動"
+              unCheckedChildren="手動"
+            />
+            <span className="muted-label">{autoCheck ? "即時更新中" : "已停止"}</span>
+          </Space>
         </div>
         <div className="network-control-actions">
           {batchDetail && isActive(batchDetail.batch.status) ? (

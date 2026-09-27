@@ -233,33 +233,6 @@ async def check_network_device(request: NetworkCheckRequest) -> NetworkCheckResu
     return result
 
 
-@app.post("/api/device-checks/{device_name}", response_model=NetworkCheckResult)
-async def check_device_by_profile(
-    device_name: str,
-    _: DeviceCheckRequest | None = None,
-) -> NetworkCheckResult:
-    config = store.load()
-    device = next((item for item in config.devices if item.name == device_name), None)
-    if device is None:
-        raise HTTPException(status_code=404, detail="device not found")
-    if not device.enabled:
-        raise HTTPException(status_code=422, detail="device is disabled")
-
-    result = await network_adapter.check_device(device)
-    if result.check_profile == "full_stack" and result.tcp_state == "OPEN":
-        modbus_result = await asyncio.to_thread(check_service.adapter.check_device, device)
-        result.modbus_status = modbus_result.status
-        result.modbus_error_type = modbus_result.error_type
-        result.modbus_error_message = modbus_result.error_message
-        if modbus_result.status != "PASS":
-            result.overall_status = modbus_result.status
-            result.failure_stage = "MODBUS"
-            result.error_type = modbus_result.error_type
-            result.error_message = modbus_result.error_message
-        result = diagnose_network(result, device)
-    return result
-
-
 @app.post(
     "/api/network/check",
     response_model=NetworkBatch,
@@ -382,6 +355,33 @@ def get_device_check_batch(batch_id: str) -> NetworkBatchDetailResponse:
 @app.post("/api/device-checks/batches/{batch_id}/cancel", response_model=NetworkBatch)
 def cancel_device_check_batch(batch_id: str) -> NetworkBatch:
     return cancel_network_check_batch(batch_id)
+
+
+@app.post("/api/device-checks/{device_name}", response_model=NetworkCheckResult)
+async def check_device_by_profile(
+    device_name: str,
+    _: DeviceCheckRequest | None = None,
+) -> NetworkCheckResult:
+    config = store.load()
+    device = next((item for item in config.devices if item.name == device_name), None)
+    if device is None:
+        raise HTTPException(status_code=404, detail="device not found")
+    if not device.enabled:
+        raise HTTPException(status_code=422, detail="device is disabled")
+
+    result = await network_adapter.check_device(device)
+    if result.check_profile == "full_stack" and result.tcp_state == "OPEN":
+        modbus_result = await asyncio.to_thread(check_service.adapter.check_device, device)
+        result.modbus_status = modbus_result.status
+        result.modbus_error_type = modbus_result.error_type
+        result.modbus_error_message = modbus_result.error_message
+        if modbus_result.status != "PASS":
+            result.overall_status = modbus_result.status
+            result.failure_stage = "MODBUS"
+            result.error_type = modbus_result.error_type
+            result.error_message = modbus_result.error_message
+        result = diagnose_network(result, device)
+    return result
 
 
 @app.post(
