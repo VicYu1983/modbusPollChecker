@@ -233,6 +233,7 @@ function Dashboard() {
       );
       setEditing(null);
       form.resetFields();
+      form.setFieldsValue({ check_profile: next.check_profile });
       message.success(editing ? "連線設定已更新" : "連線已新增");
       await runCheck();
     } catch (error) {

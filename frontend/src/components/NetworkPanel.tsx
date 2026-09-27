@@ -1,23 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, App as AntApp, Button, Col, Collapse, Input, InputNumber, Pagination, Progress, Row, Select, Space, Statistic, Switch, Table, Tag, Tooltip, Typography } from "antd";
+import { Alert, App as AntApp, Button, Col, Collapse, Input, InputNumber, Row, Select, Space, Statistic, Switch, Table, Tag, Tooltip, Typography } from "antd";
 import type { FormInstance, TableColumnsType } from "antd";
-import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, ReloadOutlined, StopOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, PlayCircleOutlined, ReloadOutlined } from "@ant-design/icons";
 import {
   api,
   type DeviceConfig,
-  type NetworkBatch,
-  type NetworkBatchDetail,
-  type NetworkBatchStatus,
-  type NetworkBatchTrend,
   type NetworkCheckResult,
   type NetworkCheckStatus,
-  type NetworkDeviceTrend,
-  type NetworkMode,
 } from "../api/client";
 import type { Device } from "../api/mappers";
 import { DeviceEditor } from "./DeviceEditor";
 
-const pageSize = 10;
 const statusMeta: Record<NetworkCheckStatus, { label: string; color: string; priority: number }> = {
   CONFIG_ERROR: { label: "設定錯誤", color: "error", priority: 0 },
   TIMEOUT: { label: "逾時", color: "warning", priority: 1 },
@@ -25,18 +18,6 @@ const statusMeta: Record<NetworkCheckStatus, { label: string; color: string; pri
   PARTIAL: { label: "部分正常", color: "processing", priority: 3 },
   PASS: { label: "正常", color: "success", priority: 4 },
   UNKNOWN: { label: "未知", color: "default", priority: 5 },
-};
-const batchStatusMeta: Record<NetworkBatchStatus, { label: string; color: string }> = {
-  pending: { label: "排隊中", color: "default" },
-  running: { label: "執行中", color: "processing" },
-  completed: { label: "完成", color: "success" },
-  failed: { label: "批次失敗", color: "error" },
-  cancelled: { label: "已取消", color: "default" },
-};
-const modeLabels: Record<NetworkMode, string> = {
-  network_only: "僅 Ping",
-  network_and_port: "Ping + TCP Port",
-  full_stack: "完整檢查（含 Modbus）",
 };
 const profileLabels: Record<Device["check_profile"], string> = {
   ping: "Ping",
@@ -62,10 +43,6 @@ function formatLatency(value: number | null) {
   return value === null ? "—" : `${value.toFixed(1)} ms`;
 }
 
-function isActive(status: NetworkBatchStatus) {
-  return status === "pending" || status === "running";
-}
-
 type NetworkPanelProps = {
   siteName: string;
   devices: Device[];
@@ -79,15 +56,7 @@ type NetworkPanelProps = {
 export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemove, onSubmit }: NetworkPanelProps) {
   const { message } = AntApp.useApp();
   const [maxConcurrency, setMaxConcurrency] = useState(20);
-  const [batchStarting, setBatchStarting] = useState(false);
-  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
-  const [batchDetail, setBatchDetail] = useState<NetworkBatchDetail | null>(null);
-  const [batchTrend, setBatchTrend] = useState<NetworkBatchTrend | null>(null);
-  const [batches, setBatches] = useState<NetworkBatch[]>([]);
-  const [batchTotal, setBatchTotal] = useState(0);
-  const [historyPage, setHistoryPage] = useState(1);
-  const [historyLoading, setHistoryLoading] = useState(true);
-  const [cancelling, setCancelling] = useState(false);
+  const [checkingAll, setCheckingAll] = useState(false);
   const [checkingDevice, setCheckingDevice] = useState<string | null>(null);
   const [singleResults, setSingleResults] = useState<Record<string, NetworkCheckResult>>({});
   const [search, setSearch] = useState("");
@@ -98,101 +67,14 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
   const autoCheckRef = useRef(false);
 
   const availableDevices = devices.filter((device) => device.enabled);
-  const completedBatchId = batchDetail?.batch.status === "completed"
-    ? batchDetail.batch.id
-    : null;
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .listDeviceCheckBatches(siteName, (historyPage - 1) * pageSize, pageSize)
-      .then((response) => {
-        if (cancelled) return;
-        setBatches(response.items);
-        setBatchTotal(response.total);
-        const activeBatch = response.items.find((batch) => isActive(batch.status));
-        if (activeBatch) {
-          setActiveBatchId((current) => current ?? activeBatch.id);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          message.error(error instanceof Error ? error.message : "網路批次歷史讀取失敗");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setHistoryLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [historyPage, message, siteName]);
-
-  useEffect(() => {
-    if (!activeBatchId) return;
-    let cancelled = false;
-    let timer: number | undefined;
-    const refresh = async () => {
-      try {
-        const detail = await api.getDeviceCheckBatch(activeBatchId);
-        if (cancelled) return;
-        setBatchDetail(detail);
-        if (!isActive(detail.batch.status)) {
-          const history = await api.listDeviceCheckBatches(
-            siteName,
-            (historyPage - 1) * pageSize,
-            pageSize,
-          );
-          if (cancelled) return;
-          setBatches(history.items);
-          setBatchTotal(history.total);
-          setActiveBatchId(null);
-          return;
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setActiveBatchId(null);
-          message.error(error instanceof Error ? error.message : "網路批次狀態讀取失敗");
-        }
-        return;
-      }
-      timer = window.setTimeout(() => void refresh(), 1000);
-    };
-    void refresh();
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [activeBatchId, historyPage, message, siteName]);
-
-  useEffect(() => {
-    if (!completedBatchId) return;
-    let cancelled = false;
-    api
-      .getNetworkTrend(completedBatchId)
-      .then((trend) => {
-        if (!cancelled) setBatchTrend(trend);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          message.error(error instanceof Error ? error.message : "網路趨勢讀取失敗");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [completedBatchId, message]);
 
   const resultByDevice = useMemo(() => {
     const results = new Map<string, NetworkCheckResult>();
-    for (const record of batchDetail?.results ?? []) {
-      results.set(record.result.device_name, record.result);
-    }
     for (const [deviceName, result] of Object.entries(singleResults)) {
       results.set(deviceName, result);
     }
     return results;
-  }, [batchDetail, singleResults]);
+  }, [singleResults]);
 
   const resultRows = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
@@ -213,22 +95,44 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
     ["FAIL", "TIMEOUT", "CONFIG_ERROR", "PARTIAL"].includes(result.overall_status),
   ).length;
 
-  const startBatch = async () => {
-    setBatchStarting(true);
+  const runChecks = async () => {
+    const outcomes: PromiseSettledResult<NetworkCheckResult>[] = new Array(availableDevices.length);
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < availableDevices.length) {
+        const index = cursor;
+        cursor += 1;
+        try {
+          outcomes[index] = { status: "fulfilled", value: await api.checkDevice(availableDevices[index].name) };
+        } catch (reason) {
+          outcomes[index] = { status: "rejected", reason };
+        }
+      }
+    };
+    const limit = Math.max(1, Math.min(maxConcurrency, availableDevices.length));
+    await Promise.all(Array.from({ length: limit }, () => worker()));
+    setSingleResults((current) => {
+      const next = { ...current };
+      outcomes.forEach((outcome, index) => {
+        if (outcome.status === "fulfilled") {
+          next[availableDevices[index].name] = outcome.value;
+        }
+      });
+      return next;
+    });
+    return outcomes;
+  };
+
+  const checkAll = async () => {
+    if (!availableDevices.length) return;
+    setCheckingAll(true);
     try {
-      const batch = await api.createDeviceCheckBatch(siteName, maxConcurrency);
-      setSingleResults({});
-      setBatchTrend(null);
-      setBatchDetail({ batch, results: [], completed_device_count: 0, comparison: null });
-      setActiveBatchId(batch.id);
-      setHistoryPage(1);
-      setBatches((current) => [batch, ...current.filter((item) => item.id !== batch.id)]);
-      setBatchTotal((total) => total + 1);
-      message.success("網路健檢批次已啟動");
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "網路健檢啟動失敗");
+      const results = await runChecks();
+      const failed = results.filter((outcome) => outcome.status === "rejected").length;
+      if (failed) message.warning(`${failed} 台設備檢查失敗`);
+      else message.success("設備檢查完成");
     } finally {
-      setBatchStarting(false);
+      setCheckingAll(false);
     }
   };
 
@@ -249,18 +153,7 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
     if (autoChecking) return;
     setAutoChecking(true);
     try {
-      const results = await Promise.allSettled(
-        availableDevices.map((device) => api.checkDevice(device.name)),
-      );
-      setSingleResults((current) => {
-        const next = { ...current };
-        results.forEach((outcome, index) => {
-          if (outcome.status === "fulfilled") {
-            next[availableDevices[index].name] = outcome.value;
-          }
-        });
-        return next;
-      });
+      await runChecks();
     } finally {
       setAutoChecking(false);
     }
@@ -287,31 +180,6 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoCheck, autoIntervalMs, siteName, devices.length]);
-
-  const cancelBatch = async (batch: NetworkBatch) => {
-    setCancelling(true);
-    try {
-      const updated = await api.cancelDeviceCheckBatch(batch.id);
-      setBatches((current) => current.map((item) => item.id === updated.id ? updated : item));
-      message.info("已送出取消要求");
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "取消網路批次失敗");
-    } finally {
-      setCancelling(false);
-    }
-  };
-
-  const openBatch = async (batch: NetworkBatch) => {
-    try {
-      const detail = await api.getDeviceCheckBatch(batch.id);
-      setBatchDetail(detail);
-      setBatchTrend(null);
-      setSingleResults({});
-      setActiveBatchId(isActive(detail.batch.status) ? detail.batch.id : null);
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "網路批次結果讀取失敗");
-    }
-  };
 
   const columns: TableColumnsType<Device> = [
     {
@@ -420,7 +288,7 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
               icon={<ReloadOutlined />}
               aria-label={`重測 ${device.name}`}
               loading={checkingDevice === device.name}
-              disabled={checkingDevice !== null || activeBatchId !== null}
+              disabled={checkingDevice !== null || checkingAll}
               onClick={() => void checkOne(device)}
             />
           </Tooltip>
@@ -430,114 +298,6 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
       ),
     },
   ];
-
-  const historyColumns: TableColumnsType<NetworkBatch> = [
-    {
-      title: "開始時間",
-      dataIndex: "started_at",
-      key: "started_at",
-      render: (value: string) => new Date(value).toLocaleString(),
-    },
-    {
-      title: "模式",
-      dataIndex: "mode",
-      key: "mode",
-      render: (value: NetworkMode | "mixed") => value === "mixed" ? "混合流程" : modeLabels[value],
-    },
-    {
-      title: "進度",
-      key: "progress",
-      render: (_: unknown, batch) => `${batch.completed_device_count} / ${batch.device_names.length}`,
-    },
-    {
-      title: "結果",
-      key: "summary",
-      render: (_: unknown, batch) => `${batch.pass_count} 通過 · ${batch.fail_count + batch.timeout_count + batch.config_error_count + batch.partial_count} 異常`,
-    },
-    {
-      title: "狀態",
-      dataIndex: "status",
-      key: "status",
-      render: (status: NetworkBatchStatus) => <Tag color={batchStatusMeta[status].color}>{batchStatusMeta[status].label}</Tag>,
-    },
-    {
-      title: "操作",
-      key: "actions",
-      align: "right",
-      render: (_: unknown, batch) => (
-        <Space size={4}>
-          <Tooltip title="查看批次結果">
-            <Button type="text" icon={<EyeOutlined />} aria-label={`查看批次 ${batch.id}`} onClick={() => void openBatch(batch)} />
-          </Tooltip>
-          {isActive(batch.status) && (
-            <Tooltip title="取消批次">
-              <Button type="text" danger icon={<StopOutlined />} aria-label={`取消批次 ${batch.id}`} loading={cancelling && activeBatchId === batch.id} onClick={() => void cancelBatch(batch)} />
-            </Tooltip>
-          )}
-          <Tooltip title="下載 CSV 報告">
-            <Button
-              type="text"
-              icon={<DownloadOutlined />}
-              aria-label={`下載 CSV 報告 ${batch.id}`}
-              href={api.getNetworkReportUrl(batch.id, "csv")}
-              disabled={batch.status !== "completed"}
-            />
-          </Tooltip>
-          <Tooltip title="下載 HTML 報告">
-            <Button
-              type="text"
-              icon={<FileTextOutlined />}
-              aria-label={`下載 HTML 報告 ${batch.id}`}
-              href={api.getNetworkReportUrl(batch.id, "html")}
-              disabled={batch.status !== "completed"}
-            />
-          </Tooltip>
-        </Space>
-      ),
-    },
-  ];
-
-  const trendColumns: TableColumnsType<NetworkDeviceTrend> = [
-    {
-      title: "設備",
-      dataIndex: "device_name",
-      key: "device_name",
-    },
-    {
-      title: "樣本 / 歷史未通過",
-      key: "samples",
-      render: (_: unknown, trend) => `${trend.sample_count} 次 / ${trend.historical_failure_count} 次`,
-    },
-    {
-      title: "Ping 延遲差",
-      key: "latency_delta",
-      render: (_: unknown, trend) => trend.latency_delta_ms === null
-        ? "—"
-        : `${trend.latency_delta_ms > 0 ? "+" : ""}${trend.latency_delta_ms.toFixed(1)} ms`,
-    },
-    {
-      title: "封包遺失差",
-      key: "loss_delta",
-      render: (_: unknown, trend) => trend.loss_delta_percent === null
-        ? "—"
-        : `${trend.loss_delta_percent > 0 ? "+" : ""}${trend.loss_delta_percent.toFixed(1)} 個百分點`,
-    },
-    {
-      title: "間歇性異常",
-      dataIndex: "intermittent_disconnect",
-      key: "intermittent_disconnect",
-      render: (value: boolean) => value ? <Tag color="warning">曾間歇未通過</Tag> : <Tag>未發現</Tag>,
-    },
-    {
-      title: "摘要",
-      dataIndex: "summary",
-      key: "summary",
-    },
-  ];
-
-  const currentProgress = batchDetail
-    ? Math.round(batchDetail.completed_device_count / Math.max(1, batchDetail.batch.device_names.length) * 100)
-    : 0;
 
   return (
     <div className="network-panel">
@@ -588,17 +348,12 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
           </Space>
         </div>
         <div className="network-control-actions">
-          {batchDetail && isActive(batchDetail.batch.status) ? (
-            <Button danger icon={<StopOutlined />} loading={cancelling} onClick={() => void cancelBatch(batchDetail.batch)}>
-              取消批次
-            </Button>
-          ) : null}
           <Button
             type="primary"
             icon={<PlayCircleOutlined />}
-            loading={batchStarting}
-            disabled={!availableDevices.length || activeBatchId !== null}
-            onClick={() => void startBatch()}
+            loading={checkingAll}
+            disabled={!availableDevices.length || checkingAll}
+            onClick={() => void checkAll()}
           >
             開始設備檢查
           </Button>
@@ -638,19 +393,13 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
                   <Col xs={12} md={6}><Statistic title="已取得結果" value={checkedResults.length} suffix="台" /></Col>
                 </Row>
 
-                {batchDetail && (
-                  <section className="network-progress" aria-live="polite">
-                    <div className="regression-progress-heading">
-                      <strong>
-                        {isActive(batchDetail.batch.status)
-                          ? `批次執行中 · ${batchDetail.batch.id}`
-                          : `批次${batchStatusMeta[batchDetail.batch.status].label} · ${batchDetail.batch.id}`}
-                      </strong>
-                      <span>{batchDetail.completed_device_count} / {batchDetail.batch.device_names.length} 台</span>
-                    </div>
-                    <Progress percent={currentProgress} status={batchDetail.batch.status === "failed" ? "exception" : "normal"} />
-                  </section>
-                )}
+                <Alert
+                  type="info"
+                  showIcon
+                  title="即時檢查不寫入歷史"
+                  description="此處僅顯示最新一次檢查結果；需要保留紀錄與基準比較，請使用「回歸測試」。"
+                  style={{ marginBottom: 16 }}
+                />
 
                 <div className="network-section-heading">
                   <Space wrap>
@@ -673,81 +422,8 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
                   dataSource={resultRows.map(({ device }) => device)}
                   pagination={{ pageSize: 50, hideOnSinglePage: true, showSizeChanger: false }}
                   scroll={{ x: 980 }}
-                  locale={{ emptyText: availableDevices.length ? "沒有符合條件的設備" : "目前沒有啟用網路健檢的設備" }}
+                  locale={{ emptyText: availableDevices.length ? "沒有符合條件的設備" : "目前沒有啟用的設備" }}
                 />
-              </>
-            ),
-          },
-          {
-            key: "history",
-            label: (
-              <div className="network-collapse-label">
-                <span className="section-kicker">BATCH HISTORY</span>
-                <h2>批次歷史</h2>
-              </div>
-            ),
-            children: (
-              <>
-                {batchTrend && (
-                  <section className="network-trend">
-                    <div className="network-section-heading">
-                      <div>
-                        <span className="section-kicker">RECENT HISTORY</span>
-                        <h2>網路品質趨勢</h2>
-                      </div>
-                    </div>
-                    <Alert
-                      type={batchTrend.historical_batch_count === 0 ? "info" : batchTrend.latency_degraded_count + batchTrend.loss_degraded_count + batchTrend.intermittent_disconnect_count > 0 ? "warning" : "success"}
-                      showIcon
-                      title={batchTrend.summary}
-                      description={`依最近 ${batchTrend.historical_batch_count} 個同模式完成批次比較；單台趨勢最多取 10 筆歷史樣本。`}
-                    />
-                    <Table<NetworkDeviceTrend>
-                      rowKey="device_name"
-                      columns={trendColumns}
-                      dataSource={batchTrend.devices}
-                      pagination={false}
-                      scroll={{ x: 800 }}
-                      locale={{ emptyText: "此批次沒有可比較的設備結果" }}
-                    />
-                  </section>
-                )}
-
-                <div className="network-section-heading">
-                  <Button icon={<ReloadOutlined />} aria-label="重新整理網路批次歷史" loading={historyLoading} onClick={() => {
-                    setHistoryLoading(true);
-                    void api.listDeviceCheckBatches(siteName, (historyPage - 1) * pageSize, pageSize)
-                      .then((response) => {
-                        setBatches(response.items);
-                        setBatchTotal(response.total);
-                      })
-                      .catch((error: unknown) => message.error(error instanceof Error ? error.message : "網路批次歷史讀取失敗"))
-                      .finally(() => setHistoryLoading(false));
-                  }} />
-                </div>
-                <Table<NetworkBatch>
-                  rowKey="id"
-                  columns={historyColumns}
-                  dataSource={batches}
-                  loading={historyLoading}
-                  pagination={false}
-                  scroll={{ x: 760 }}
-                  locale={{ emptyText: "尚無網路健檢批次" }}
-                />
-                {batchTotal > pageSize && (
-                  <div className="network-pagination">
-                    <Pagination
-                      current={historyPage}
-                      pageSize={pageSize}
-                      total={batchTotal}
-                      showSizeChanger={false}
-                      onChange={(page) => {
-                        setHistoryLoading(true);
-                        setHistoryPage(page);
-                      }}
-                    />
-                  </div>
-                )}
               </>
             ),
           },
