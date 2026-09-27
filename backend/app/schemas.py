@@ -10,6 +10,7 @@ FunctionCode = Literal["01", "02", "03", "04"]
 AddressMode = Literal["dec", "hex"]
 Status = Literal["PASS", "FAIL", "TIMEOUT", "CONFIG_ERROR", "UNKNOWN"]
 NetworkMode = Literal["network_only", "network_and_port", "full_stack"]
+CheckProfile = Literal["ping", "ping_tcp", "full_stack"]
 PingState = Literal["PASS", "TIMEOUT", "UNREACHABLE", "NOT_SUPPORTED", "UNKNOWN"]
 TcpState = Literal["OPEN", "CLOSED", "TIMEOUT", "UNREACHABLE", "NOT_TESTED"]
 NetworkStatus = Literal["PASS", "FAIL", "TIMEOUT", "CONFIG_ERROR", "PARTIAL", "UNKNOWN"]
@@ -32,6 +33,7 @@ class DeviceConfig(BaseModel):
     scan_rate_ms: int = Field(default=1000, ge=0)
     delay_between_polls_ms: int = Field(default=20, ge=0)
     enabled: bool = True
+    check_profile: CheckProfile = "full_stack"
     network_check_enabled: bool = True
     ping_enabled: bool = True
     ping_attempts: int = Field(default=4, ge=1, le=20)
@@ -55,6 +57,8 @@ class DeviceConfig(BaseModel):
     def validate_register_quantity(self) -> "DeviceConfig":
         if self.function in {"03", "04"} and self.quantity > 125:
             raise ValueError("quantity must be between 1 and 125 for register reads")
+        if self.check_profile == "ping_tcp" and self.tcp_port is None:
+            raise ValueError("tcp_port is required for ping_tcp devices")
         return self
 
 
@@ -107,10 +111,14 @@ class NetworkCheckRequest(BaseModel):
     mode: NetworkMode = "network_and_port"
 
 
+class DeviceCheckRequest(BaseModel):
+    pass
+
+
 class NetworkBatchCreateRequest(BaseModel):
     site_name: str | None = None
     device_names: list[str] | None = None
-    mode: NetworkMode = "network_and_port"
+    mode: NetworkMode | None = None
     max_concurrency: int = Field(default=20, ge=1, le=50)
 
 
@@ -119,6 +127,7 @@ class NetworkCheckResult(BaseModel):
     target_ip: IPvAnyAddress
     timestamp: datetime
     mode: NetworkMode
+    check_profile: CheckProfile = "full_stack"
     ping_state: PingState
     ping_attempts: int = Field(ge=0)
     ping_success_count: int = Field(ge=0)

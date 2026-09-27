@@ -15,4 +15,5 @@ export const deviceDefaults: DeviceConfig = {
   scan_rate_ms: 1000,
   delay_between_polls_ms: 20,
   enabled: true,
+  check_profile: "full_stack",
 };

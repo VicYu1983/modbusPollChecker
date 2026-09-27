@@ -9,6 +9,7 @@ from ..schemas import NetworkCheckResult, NetworkMode, NetworkStatus, SiteConfig
 
 
 NetworkBatchStatus = Literal["pending", "running", "completed", "failed", "cancelled"]
+NetworkBatchMode = NetworkMode | Literal["mixed"]
 
 
 class NetworkBatchCounts(BaseModel):
@@ -23,7 +24,7 @@ class NetworkBatchCounts(BaseModel):
 class NetworkBatch(BaseModel):
     id: str
     site_name: str
-    mode: NetworkMode
+    mode: NetworkBatchMode
     status: NetworkBatchStatus
     device_names: list[str]
     config_snapshot: SiteConfig
@@ -78,7 +79,7 @@ class NetworkDeviceTrend(BaseModel):
 class NetworkBatchTrend(BaseModel):
     batch_id: str
     site_name: str
-    mode: NetworkMode
+    mode: NetworkMode | Literal["mixed"]
     historical_batch_count: int
     latency_degraded_count: int
     loss_degraded_count: int

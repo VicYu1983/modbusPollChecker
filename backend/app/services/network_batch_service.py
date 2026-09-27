@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from threading import Event, Lock
 from uuid import uuid4
 
+from ..domain.check_profile import CheckProfileConfigError, resolve_check_profile
 from ..domain.network_diagnosis import diagnose_network
 from ..domain.network_models import (
     NetworkBatch,
@@ -48,7 +49,7 @@ class NetworkBatchService:
         config: SiteConfig,
         *,
         device_names: list[str] | None = None,
-        mode: NetworkMode = "network_and_port",
+        mode: NetworkMode | None = None,
         max_concurrency: int = 20,
     ) -> NetworkBatch:
         if not 1 <= max_concurrency <= self.max_concurrency_limit:
@@ -80,7 +81,7 @@ class NetworkBatchService:
             batch = NetworkBatch(
                 id=f"network-{now.strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:6]}",
                 site_name=config.site_name,
-                mode=mode,
+                mode=mode or "mixed",
                 status="pending",
                 device_names=[device.name for device in selected_devices],
                 config_snapshot=config,
@@ -155,12 +156,17 @@ class NetworkBatchService:
                 if cancel_event.is_set():
                     return None
                 try:
-                    result = await self.adapter.check_device(device, batch.mode)
+                    profile = resolve_check_profile(device)
+                    result = await self.adapter.check_device(device, profile.network_mode)
+                    result.check_profile = profile.name
+                    result.tcp_port = profile.tcp_port if profile.network_mode != "network_only" else None
                 except asyncio.CancelledError:
                     raise
+                except CheckProfileConfigError as error:
+                    result = self._config_result(device, error)
                 except Exception:
-                    result = self._error_result(device, batch.mode)
-                if batch.mode == "full_stack" and result.tcp_state == "OPEN" and self.modbus_checker:
+                    result = self._error_result(device, device.check_profile)
+                if result.check_profile == "full_stack" and result.tcp_state == "OPEN" and self.modbus_checker:
                     try:
                         modbus = await asyncio.to_thread(self.modbus_checker.check_device, device)
                         result.modbus_status = modbus.status
@@ -179,7 +185,7 @@ class NetworkBatchService:
                         result.modbus_status = "UNKNOWN"
                         result.modbus_error_type = result.error_type
                         result.modbus_error_message = result.error_message
-                    result = diagnose_network(result, device)
+                result = diagnose_network(result, device)
                 return device, result
 
         tasks = {asyncio.create_task(check_one(device)) for device in devices}
@@ -221,12 +227,37 @@ class NetworkBatchService:
         return counts
 
     @staticmethod
-    def _error_result(device: DeviceConfig, mode: NetworkMode) -> NetworkCheckResult:
+    def _config_result(device: DeviceConfig, error: Exception) -> NetworkCheckResult:
+        return NetworkCheckResult(
+            device_name=device.name,
+            target_ip=device.ip,
+            timestamp=datetime.now(timezone.utc),
+            mode="network_only",
+            check_profile=device.check_profile,
+            ping_state="UNKNOWN",
+            ping_attempts=0,
+            ping_success_count=0,
+            tcp_port=None,
+            tcp_state="NOT_TESTED",
+            overall_status="CONFIG_ERROR",
+            failure_stage="CONFIG",
+            error_type="profile_config_error",
+            error_message=str(error),
+        )
+
+    @staticmethod
+    def _error_result(device: DeviceConfig, profile: str) -> NetworkCheckResult:
+        mode: NetworkMode = {
+            "ping": "network_only",
+            "ping_tcp": "network_and_port",
+            "full_stack": "full_stack",
+        }.get(profile, "network_only")  # type: ignore[assignment]
         return NetworkCheckResult(
             device_name=device.name,
             target_ip=device.ip,
             timestamp=datetime.now(timezone.utc),
             mode=mode,
+            check_profile=profile,  # type: ignore[arg-type]
             ping_state="UNKNOWN",
             ping_attempts=0,
             ping_success_count=0,

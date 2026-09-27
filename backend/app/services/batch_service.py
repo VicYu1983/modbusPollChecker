@@ -44,7 +44,13 @@ class BatchService:
         note: str | None = None,
         on_complete: Callable[[], None] | None = None,
     ) -> CheckBatch:
-        enabled_devices = [device for device in config.devices if device.enabled]
+        enabled_devices = [
+            device
+            for device in config.devices
+            if device.enabled
+            and device.network_check_enabled
+            and device.check_profile == "full_stack"
+        ]
         if device_names is None:
             selected_devices = enabled_devices
         else:
@@ -55,10 +61,12 @@ class BatchService:
             by_name = {device.name: device for device in enabled_devices}
             missing = [name for name in device_names if name not in by_name]
             if missing:
-                raise ValueError(f"unknown or disabled devices: {', '.join(missing)}")
+                raise ValueError(
+                    f"unknown, disabled, or non-Modbus devices: {', '.join(missing)}"
+                )
             selected_devices = [by_name[name] for name in device_names]
         if not selected_devices:
-            raise ValueError("site has no enabled devices to check")
+            raise ValueError("目前案場沒有啟用完整 Modbus 檢查的設備")
 
         with self._lock:
             if self._active_batch_id is not None:

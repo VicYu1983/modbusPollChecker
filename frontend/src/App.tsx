@@ -586,12 +586,22 @@ function Dashboard() {
           activeKey={activeModule}
           onChange={setActiveModule}
           items={[
-            { key: "connection", label: "連線狀況" },
-            { key: "network", label: "網路健檢" },
+            { key: "device", label: "設備檢查" },
             { key: "regression", label: "回歸測試" },
           ]}
         />
-        {activeModule === "connection" && (
+        {activeModule === "device" && (
+          <NetworkPanel
+            siteName={siteName}
+            devices={devices}
+            form={form}
+            editing={editing}
+            onEdit={openEdit}
+            onRemove={remove}
+            onSubmit={() => form.submit()}
+          />
+        )}
+        {activeModule === "legacy_connection" && (
           <>
         <section className="intro">
           <div>
@@ -717,7 +727,7 @@ function Dashboard() {
           selectedBatchIds={selectedBatchIds}
           cancellingBatchId={cancellingBatchId}
           comparisonLoadingId={comparisonLoadingId}
-          enabledDeviceCount={devices.filter((device) => device.enabled).length}
+          enabledDeviceCount={devices.filter((device) => device.enabled && device.network_check_enabled !== false && device.check_profile === "full_stack").length}
           onBatchNoteChange={setBatchNote}
           onStartBatch={() => void startRegressionBatch()}
           onClearBaseline={clearCurrentBaseline}
@@ -733,9 +743,6 @@ function Dashboard() {
         />
           </>
         )}
-        <div hidden={activeModule !== "network"}>
-          <NetworkPanel siteName={siteName} devices={devices} />
-        </div>
       </main>
     </Layout>
   );

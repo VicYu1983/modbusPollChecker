@@ -36,6 +36,7 @@ from .schemas import (
     BatchCreateRequest,
     BaselineRequest,
     CheckRequest,
+    DeviceCheckRequest,
     DeviceConfig,
     ErrorResponse,
     NetworkBatchCreateRequest,
@@ -232,6 +233,33 @@ async def check_network_device(request: NetworkCheckRequest) -> NetworkCheckResu
     return result
 
 
+@app.post("/api/device-checks/{device_name}", response_model=NetworkCheckResult)
+async def check_device_by_profile(
+    device_name: str,
+    _: DeviceCheckRequest | None = None,
+) -> NetworkCheckResult:
+    config = store.load()
+    device = next((item for item in config.devices if item.name == device_name), None)
+    if device is None:
+        raise HTTPException(status_code=404, detail="device not found")
+    if not device.enabled:
+        raise HTTPException(status_code=422, detail="device is disabled")
+
+    result = await network_adapter.check_device(device)
+    if result.check_profile == "full_stack" and result.tcp_state == "OPEN":
+        modbus_result = await asyncio.to_thread(check_service.adapter.check_device, device)
+        result.modbus_status = modbus_result.status
+        result.modbus_error_type = modbus_result.error_type
+        result.modbus_error_message = modbus_result.error_message
+        if modbus_result.status != "PASS":
+            result.overall_status = modbus_result.status
+            result.failure_stage = "MODBUS"
+            result.error_type = modbus_result.error_type
+            result.error_message = modbus_result.error_message
+        result = diagnose_network(result, device)
+    return result
+
+
 @app.post(
     "/api/network/check",
     response_model=NetworkBatch,
@@ -314,6 +342,46 @@ def cancel_network_check_batch(batch_id: str) -> NetworkBatch:
     if not network_batch_service.cancel_batch(batch_id):
         raise HTTPException(status_code=409, detail="network batch could not be cancelled")
     return history.get_network_batch(batch_id)
+
+
+@app.post("/api/device-checks/batches", response_model=NetworkBatch, status_code=202)
+def create_device_check_batch(request: NetworkBatchCreateRequest) -> NetworkBatch:
+    try:
+        config = store.load(request.site_name)
+        if request.site_name and config.site_name != request.site_name:
+            raise HTTPException(status_code=404, detail="site not found")
+        return network_batch_service.start_batch(
+            config,
+            device_names=request.device_names,
+            max_concurrency=request.max_concurrency,
+        )
+    except NetworkBatchAlreadyRunningError as error:
+        raise HTTPException(status_code=409, detail="a device-check batch is already running") from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get("/api/device-checks/batches", response_model=NetworkBatchListResponse)
+def list_device_check_batches(
+    site_name: str | None = None,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> NetworkBatchListResponse:
+    items, total = history.list_network_batches(site_name, offset=offset, limit=limit)
+    return NetworkBatchListResponse(items=items, total=total)
+
+
+@app.get("/api/device-checks/batches/{batch_id}", response_model=NetworkBatchDetailResponse)
+def get_device_check_batch(batch_id: str) -> NetworkBatchDetailResponse:
+    try:
+        return network_batch_service.get_batch(batch_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="device-check batch not found") from error
+
+
+@app.post("/api/device-checks/batches/{batch_id}/cancel", response_model=NetworkBatch)
+def cancel_device_check_batch(batch_id: str) -> NetworkBatch:
+    return cancel_network_check_batch(batch_id)
 
 
 @app.post(

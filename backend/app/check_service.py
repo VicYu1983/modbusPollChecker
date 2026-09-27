@@ -24,7 +24,13 @@ class CheckService:
         self._last_poll_at: datetime | None = None
 
     def check(self, config: SiteConfig, device_name: str | None = None) -> list[CheckResult]:
-        devices = [device for device in config.devices if device.enabled]
+        devices = [
+            device
+            for device in config.devices
+            if device.enabled
+            and device.network_check_enabled
+            and device.check_profile == "full_stack"
+        ]
         if device_name:
             devices = [device for device in devices if device.name == device_name]
         futures = [self.executor.submit(self.adapter.check_device, device) for device in devices]
@@ -81,6 +87,8 @@ class CheckService:
             devices = [
                 device for device in config.devices
                 if device.enabled
+                and device.network_check_enabled
+                and device.check_profile == "full_stack"
             ]
             active_names = {device.name for device in devices}
             next_due = {name: due for name, due in next_due.items() if name in active_names}

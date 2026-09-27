@@ -13,6 +13,7 @@ export type DeviceConfig = {
   scan_rate_ms: number
   delay_between_polls_ms: number
   enabled: boolean
+  check_profile: 'ping' | 'ping_tcp' | 'full_stack'
   network_check_enabled?: boolean
   ping_enabled?: boolean
   ping_attempts?: number
@@ -128,6 +129,7 @@ export type NetworkCheckResult = {
   target_ip: string
   timestamp: string
   mode: NetworkMode
+  check_profile: 'ping' | 'ping_tcp' | 'full_stack'
   ping_state: 'PASS' | 'TIMEOUT' | 'UNREACHABLE' | 'NOT_SUPPORTED' | 'UNKNOWN'
   ping_attempts: number
   ping_success_count: number
@@ -155,7 +157,7 @@ export type NetworkBatchStatus = 'pending' | 'running' | 'completed' | 'failed' 
 export type NetworkBatch = {
   id: string
   site_name: string
-  mode: NetworkMode
+  mode: NetworkMode | 'mixed'
   status: NetworkBatchStatus
   device_names: string[]
   config_snapshot: SiteConfig
@@ -205,7 +207,7 @@ export type NetworkDeviceTrend = {
 export type NetworkBatchTrend = {
   batch_id: string
   site_name: string
-  mode: NetworkMode
+  mode: NetworkMode | 'mixed'
   historical_batch_count: number
   latency_degraded_count: number
   loss_degraded_count: number
@@ -292,4 +294,22 @@ export const api = {
   ),
   getNetworkReportUrl: (batchId: string, format: 'csv' | 'html') =>
     `/api/network/batches/${encodeURIComponent(batchId)}/report?format=${format}`,
+  checkDevice: (deviceName: string) => request<NetworkCheckResult>(
+    `/api/device-checks/${encodeURIComponent(deviceName)}`,
+    { method: 'POST', body: JSON.stringify({}) },
+  ),
+  createDeviceCheckBatch: (siteName: string, maxConcurrency: number) => request<NetworkBatch>(
+    '/api/device-checks/batches',
+    { method: 'POST', body: JSON.stringify({ site_name: siteName, max_concurrency: maxConcurrency }) },
+  ),
+  listDeviceCheckBatches: (siteName: string, offset = 0, limit = 10) => request<{ items: NetworkBatch[]; total: number }>(
+    `/api/device-checks/batches?site_name=${encodeURIComponent(siteName)}&offset=${offset}&limit=${limit}`,
+  ),
+  getDeviceCheckBatch: (batchId: string) => request<NetworkBatchDetail>(
+    `/api/device-checks/batches/${encodeURIComponent(batchId)}`,
+  ),
+  cancelDeviceCheckBatch: (batchId: string) => request<NetworkBatch>(
+    `/api/device-checks/batches/${encodeURIComponent(batchId)}/cancel`,
+    { method: 'POST' },
+  ),
 }

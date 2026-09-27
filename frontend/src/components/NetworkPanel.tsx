@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, App as AntApp, Button, Col, Input, InputNumber, Pagination, Progress, Row, Select, Space, Statistic, Table, Tag, Tooltip, Typography } from "antd";
-import type { TableColumnsType } from "antd";
-import { DownloadOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, ReloadOutlined, StopOutlined } from "@ant-design/icons";
+import { Alert, App as AntApp, Button, Card, Col, Input, InputNumber, Pagination, Progress, Row, Select, Space, Statistic, Table, Tag, Tooltip, Typography } from "antd";
+import type { FormInstance, TableColumnsType } from "antd";
+import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, ReloadOutlined, StopOutlined } from "@ant-design/icons";
 import {
   api,
+  type DeviceConfig,
   type NetworkBatch,
   type NetworkBatchDetail,
   type NetworkBatchStatus,
@@ -14,6 +15,7 @@ import {
   type NetworkMode,
 } from "../api/client";
 import type { Device } from "../api/mappers";
+import { DeviceEditor } from "./DeviceEditor";
 
 const pageSize = 10;
 const statusMeta: Record<NetworkCheckStatus, { label: string; color: string; priority: number }> = {
@@ -35,6 +37,11 @@ const modeLabels: Record<NetworkMode, string> = {
   network_only: "僅 Ping",
   network_and_port: "Ping + TCP Port",
   full_stack: "完整檢查（含 Modbus）",
+};
+const profileLabels: Record<Device["check_profile"], string> = {
+  ping: "Ping",
+  ping_tcp: "Ping + TCP",
+  full_stack: "完整檢查",
 };
 const pingLabels: Record<NetworkCheckResult["ping_state"], string> = {
   PASS: "回應",
@@ -62,11 +69,15 @@ function isActive(status: NetworkBatchStatus) {
 type NetworkPanelProps = {
   siteName: string;
   devices: Device[];
+  form: FormInstance<DeviceConfig>;
+  editing: Device | null;
+  onEdit: (device: Device) => void;
+  onRemove: (device: Device) => void;
+  onSubmit: () => void | Promise<void>;
 };
 
-export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
+export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemove, onSubmit }: NetworkPanelProps) {
   const { message } = AntApp.useApp();
-  const [mode, setMode] = useState<NetworkMode>("network_and_port");
   const [maxConcurrency, setMaxConcurrency] = useState(20);
   const [batchStarting, setBatchStarting] = useState(false);
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
@@ -92,7 +103,7 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
   useEffect(() => {
     let cancelled = false;
     api
-      .listNetworkBatches(siteName, (historyPage - 1) * pageSize, pageSize)
+      .listDeviceCheckBatches(siteName, (historyPage - 1) * pageSize, pageSize)
       .then((response) => {
         if (cancelled) return;
         setBatches(response.items);
@@ -121,11 +132,11 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
     let timer: number | undefined;
     const refresh = async () => {
       try {
-        const detail = await api.getNetworkBatch(activeBatchId);
+        const detail = await api.getDeviceCheckBatch(activeBatchId);
         if (cancelled) return;
         setBatchDetail(detail);
         if (!isActive(detail.batch.status)) {
-          const history = await api.listNetworkBatches(
+          const history = await api.listDeviceCheckBatches(
             siteName,
             (historyPage - 1) * pageSize,
             pageSize,
@@ -203,7 +214,7 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
   const startBatch = async () => {
     setBatchStarting(true);
     try {
-      const batch = await api.createNetworkBatch(siteName, mode, maxConcurrency);
+      const batch = await api.createDeviceCheckBatch(siteName, maxConcurrency);
       setSingleResults({});
       setBatchTrend(null);
       setBatchDetail({ batch, results: [], completed_device_count: 0 });
@@ -222,7 +233,7 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
   const checkOne = async (device: Device) => {
     setCheckingDevice(device.name);
     try {
-      const result = await api.checkNetworkDevice(device.name, mode);
+      const result = await api.checkDevice(device.name);
       setSingleResults((current) => ({ ...current, [device.name]: result }));
       message.success(`${device.name} 網路測試完成`);
     } catch (error) {
@@ -235,7 +246,7 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
   const cancelBatch = async (batch: NetworkBatch) => {
     setCancelling(true);
     try {
-      const updated = await api.cancelNetworkBatch(batch.id);
+      const updated = await api.cancelDeviceCheckBatch(batch.id);
       setBatches((current) => current.map((item) => item.id === updated.id ? updated : item));
       message.info("已送出取消要求");
     } catch (error) {
@@ -247,7 +258,7 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
 
   const openBatch = async (batch: NetworkBatch) => {
     try {
-      const detail = await api.getNetworkBatch(batch.id);
+      const detail = await api.getDeviceCheckBatch(batch.id);
       setBatchDetail(detail);
       setBatchTrend(null);
       setSingleResults({});
@@ -267,6 +278,11 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
           <span>{device.ip}</span>
         </div>
       ),
+    },
+    {
+      title: "檢查流程",
+      key: "profile",
+      render: (_: unknown, device) => profileLabels[device.check_profile],
     },
     {
       title: "Ping",
@@ -309,6 +325,14 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
       render: (_: string, device) => resultByDevice.get(device.name)?.failure_stage ?? "—",
     },
     {
+      title: "Modbus",
+      key: "modbus",
+      render: (_: unknown, device) => {
+        if (device.check_profile !== "full_stack") return "不適用";
+        return resultByDevice.get(device.name)?.modbus_status ?? "—";
+      },
+    },
+    {
       title: "總狀態",
       key: "status",
       render: (_: unknown, device) => {
@@ -344,16 +368,20 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
       key: "actions",
       align: "right",
       render: (_: unknown, device) => (
-        <Tooltip title={`測試 ${device.name}`}>
-          <Button
-            type="text"
-            icon={<ReloadOutlined />}
-            aria-label={`重測 ${device.name}`}
-            loading={checkingDevice === device.name}
-            disabled={checkingDevice !== null || activeBatchId !== null}
-            onClick={() => void checkOne(device)}
-          />
-        </Tooltip>
+        <Space size={2}>
+          <Tooltip title={`測試 ${device.name}`}>
+            <Button
+              type="text"
+              icon={<ReloadOutlined />}
+              aria-label={`重測 ${device.name}`}
+              loading={checkingDevice === device.name}
+              disabled={checkingDevice !== null || activeBatchId !== null}
+              onClick={() => void checkOne(device)}
+            />
+          </Tooltip>
+          <Button type="text" icon={<EditOutlined />} aria-label={`編輯 ${device.name}`} onClick={() => onEdit(device)} />
+          <Button type="text" danger icon={<DeleteOutlined />} aria-label={`刪除 ${device.name}`} onClick={() => onRemove(device)} />
+        </Space>
       ),
     },
   ];
@@ -369,7 +397,7 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
       title: "模式",
       dataIndex: "mode",
       key: "mode",
-      render: (value: NetworkMode) => modeLabels[value],
+      render: (value: NetworkMode | "mixed") => value === "mixed" ? "混合流程" : modeLabels[value],
     },
     {
       title: "進度",
@@ -470,23 +498,13 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
     <div className="network-panel">
       <section className="intro network-intro">
         <div>
-          <span className="section-kicker">03 / SITE CONNECTIVITY</span>
-          <Typography.Title>網路健檢</Typography.Title>
-          <Typography.Paragraph>先確認 IP 可達性，再檢查服務 Port；需要時接續 Modbus 驗證。</Typography.Paragraph>
+          <span className="section-kicker">03 / DEVICE CHECKS</span>
+          <Typography.Title>設備檢查</Typography.Title>
+          <Typography.Paragraph>依每台設備的預設流程檢查 Ping、TCP 或 Modbus，不使用全域覆蓋模式。</Typography.Paragraph>
         </div>
       </section>
 
       <section className="network-controls" aria-label="網路健檢設定">
-        <div className="network-control-field">
-          <label htmlFor="network-mode">測試模式</label>
-          <Select
-            id="network-mode"
-            value={mode}
-            onChange={setMode}
-            options={Object.entries(modeLabels).map(([value, label]) => ({ value, label }))}
-            style={{ minWidth: 190 }}
-          />
-        </div>
         <div className="network-control-field">
           <label htmlFor="network-concurrency">最大並行數</label>
           <InputNumber
@@ -511,10 +529,23 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
             disabled={!availableDevices.length || activeBatchId !== null}
             onClick={() => void startBatch()}
           >
-            開始網路健檢
+            開始設備檢查
           </Button>
         </div>
       </section>
+
+      <Card
+        className="quick-panel network-editor"
+        variant="borderless"
+        title={
+          <div>
+            <span className="section-kicker">DEVICE SETUP</span>
+            <h2>{editing ? "編輯設備" : "新增設備"}</h2>
+          </div>
+        }
+      >
+        <DeviceEditor form={form} editing={editing} onSubmit={onSubmit} />
+      </Card>
 
       <Row gutter={[12, 12]} className="network-metrics">
         <Col xs={12} md={6}><Statistic title="納入設備" value={availableDevices.length} suffix="台" /></Col>
@@ -600,7 +631,7 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
           </div>
           <Button icon={<ReloadOutlined />} aria-label="重新整理網路批次歷史" loading={historyLoading} onClick={() => {
             setHistoryLoading(true);
-            void api.listNetworkBatches(siteName, (historyPage - 1) * pageSize, pageSize)
+              void api.listDeviceCheckBatches(siteName, (historyPage - 1) * pageSize, pageSize)
               .then((response) => {
                 setBatches(response.items);
                 setBatchTotal(response.total);

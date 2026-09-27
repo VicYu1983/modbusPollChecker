@@ -241,6 +241,43 @@ class NetworkApiTests(unittest.TestCase):
         self.assertEqual(result.failure_stage, "MODBUS")
         self.assertEqual(result.modbus_error_type, "modbus_exception")
 
+    def test_profile_endpoint_does_not_run_modbus_for_ping_device(self) -> None:
+        device_result = NetworkCheckResult(
+            device_name="PLC-01",
+            target_ip="127.0.0.1",
+            timestamp="2026-09-27T00:00:00Z",
+            mode="network_only",
+            check_profile="ping",
+            ping_state="PASS",
+            ping_attempts=4,
+            ping_success_count=4,
+            ping_loss_percent=0,
+            tcp_state="NOT_TESTED",
+            overall_status="PASS",
+        )
+        network = SimpleNamespace(check_device=AsyncMock(return_value=device_result))
+        modbus_checker = SimpleNamespace(check_device=Mock())
+        with tempfile.TemporaryDirectory() as directory:
+            store = SiteStore(Path(directory))
+            store.save(
+                SiteConfig(
+                    site_name="Test",
+                    devices=[DeviceConfig(name="PLC-01", ip="127.0.0.1", check_profile="ping")],
+                )
+            )
+            services = SimpleNamespace(adapter=modbus_checker)
+            with patch.multiple(
+                main,
+                store=store,
+                network_adapter=network,
+                check_service=services,
+            ):
+                result = asyncio.run(main.check_device_by_profile("PLC-01"))
+
+        modbus_checker.check_device.assert_not_called()
+        self.assertEqual(result.check_profile, "ping")
+        self.assertIsNone(result.modbus_status)
+
 
 if __name__ == "__main__":
     unittest.main()

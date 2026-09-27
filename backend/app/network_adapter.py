@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import monotonic
 
+from .domain.check_profile import resolve_check_profile
 from .domain.network_diagnosis import diagnose_network
 from .schemas import DeviceConfig, NetworkCheckResult, NetworkMode
 
@@ -33,11 +34,13 @@ class NetworkAdapter:
     async def check_device(
         self,
         device: DeviceConfig,
-        mode: NetworkMode = "network_and_port",
+        mode: NetworkMode | None = None,
     ) -> NetworkCheckResult:
+        profile = resolve_check_profile(device)
+        mode = mode or profile.network_mode
         started_at = datetime.now(timezone.utc)
         target_ip = str(device.ip)
-        tcp_port = device.tcp_port or device.port
+        tcp_port = profile.tcp_port
 
         if device.ip.version != 4:
             return diagnose_network(NetworkCheckResult(
@@ -45,6 +48,7 @@ class NetworkAdapter:
                 target_ip=device.ip,
                 timestamp=started_at,
                 mode=mode,
+                check_profile=profile.name,
                 ping_state="UNKNOWN",
                 ping_attempts=0,
                 ping_success_count=0,
@@ -84,6 +88,7 @@ class NetworkAdapter:
             target_ip=device.ip,
             timestamp=started_at,
             mode=mode,
+            check_profile=profile.name,
             ping_state=ping.state,
             ping_attempts=attempts,
             ping_success_count=successful_pings,
