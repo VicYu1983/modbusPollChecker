@@ -28,7 +28,9 @@ echo Starting Modbus Poll Checker backend...
 start "Modbus Backend" powershell -NoExit -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%backend'; python -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
 
 echo Starting Modbus Poll Checker frontend...
-start "Modbus Frontend" powershell -NoExit -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%frontend'; if (Get-Command pnpm -ErrorAction SilentlyContinue) { pnpm run dev -- --host 127.0.0.1 } else { npm run dev -- --host 127.0.0.1 }"
+rem Prefer the locally installed Vite binary so we do not depend on pnpm,
+rem which may be blocked by Windows Application Control.
+start "Modbus Frontend" powershell -NoExit -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%frontend'; if (Test-Path '.\node_modules\.bin\vite.cmd') { & '.\node_modules\.bin\vite.cmd' --host 127.0.0.1 } else { npm run dev -- --host 127.0.0.1 }"
 
 echo.
 echo Backend:  http://127.0.0.1:8000
