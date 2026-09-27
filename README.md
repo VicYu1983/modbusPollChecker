@@ -1,21 +1,29 @@
 # Modbus Poll Checker
 
-Modbus Poll Checker 是一套執行於本機的 Modbus TCP 案場檢查工具，用來管理多台設備連線設定、執行單台或全案場檢查、持續輪詢設備狀態，以及保存回歸測試批次與比較基準。
+Modbus Poll Checker 是一套執行於本機的案場設備檢查工具，用來管理多台設備連線設定、執行即時檢查、持續輪詢設備狀態，以及保存回歸測試批次與比較基準。
+
+每台設備可選擇不同的檢查流程：
+
+- **Ping**：只確認設備是否可透過 ICMP 回應。
+- **Ping + TCP**：確認 Ping 與指定 TCP Port 是否可連線。
+- **完整檢查**：依序執行 Ping、TCP Port 與 Modbus TCP 讀取。
 
 本專案直接使用 Python 的 Modbus TCP client 連線設備，不依賴 Modbus Poll 桌面程式。Modbus Poll 可保留作為單台設備的人工交叉驗證工具。
 
 ## 功能
 
 - 管理案場名稱與設備連線設定
+- 每台設備可設定檢查流程（Ping、Ping + TCP、完整檢查）
 - 支援 Modbus TCP 功能碼 `01`、`02`、`03`、`04`
 - 設定 IP、Port、Unit ID、位址、讀取數量與逾時
-- 執行單台或全部設備檢查
-- 顯示 `PASS`、`FAIL`、`TIMEOUT`、`CONFIG_ERROR` 狀態
-- 啟用自動輪詢並即時更新設備狀態
+- **設備檢查**分頁：即時檢查單台或全部設備，不寫入歷史
+- 顯示 Ping、封包遺失、TCP Port、失敗階段、Modbus 與總狀態
+- 顯示診斷摘要與建議（例如 Ping 未回應但 TCP 可連線）
+- 啟用自動定時檢查並即時更新設備狀態
 - 儲存、讀取與清空案場設定
-- 保存回歸檢查批次與批次備註
+- **回歸測試**分頁：保存設備檢查批次與批次備註
 - 顯示進度、通過率、平均回應時間、最慢設備與異常診斷
-- 設定檢查批次為比較基準，查看新增異常、恢復與數值變更
+- 設定檢查批次為比較基準，查看新增異常、恢復、數值變更與延遲劣化
 - 取消進行中的批次
 - 刪除歷史批次與清除案場基準
 - 匯出 CSV 或 HTML 檢查報告
@@ -27,7 +35,7 @@ Modbus Poll Checker 是一套執行於本機的 Modbus TCP 案場檢查工具，
 - Python 3.10 或更新版本
 - Node.js 18 或更新版本
 - pnpm，或可替代使用 npm
-- 可連線至待檢查的 Modbus TCP 設備
+- 可連線至待檢查的設備
 
 ## 快速開始
 
@@ -93,14 +101,23 @@ Vite 會將 `/api` 請求代理到 `http://127.0.0.1:8000`。
 
 ## 使用流程
 
-1. 開啟前端頁面。
-2. 在「連線狀況」中新增設備，填入 IP、Port、Unit ID、功能碼與讀取設定。
-3. 儲存連線設定後執行單台檢查，或使用「全部檢查」檢查所有啟用設備。
-4. 需要持續監看時開啟自動輪詢。
-5. 在「回歸測試」輸入批次備註並開始完整檢查。
-6. 檢查完成後，可將合格批次設為案場基準。
-7. 後續批次可使用「比較基準」查看狀態變化與優先處理異常。
-8. 從批次歷史下載 CSV 或 HTML 報告。
+### 設備檢查（即時）
+
+1. 開啟前端頁面，預設停在「設備檢查」分頁。
+2. 在「新增設備」中填入名稱、檢查流程、IP 與相關設定。
+3. 儲存連線設定後，可對單台設備按「重測」，或按「開始設備檢查」檢查所有啟用設備。
+4. 需要持續監看時開啟「自動定時檢查」。
+5. 檢查結果只顯示在畫面上，**不會寫入歷史**。
+
+### 回歸測試（保存紀錄）
+
+1. 切換到「回歸測試」分頁。
+2. 按「開始回歸檢查」，依每台設備的預設流程執行並保存批次。
+3. 檢查完成後，可將合格批次設為「基準」。
+4. 後續批次可使用「比較基準」查看狀態變化與優先處理異常。
+5. 可從批次列表下載 CSV 或 HTML 報告。
+
+> 需要保留紀錄與基準比較時使用「回歸測試」；只想即時查看目前狀態時使用「設備檢查」。
 
 ## 設備設定
 
@@ -111,8 +128,10 @@ Vite 會將 `/api` 請求代理到 `http://127.0.0.1:8000`。
 | 欄位 | 說明 |
 | --- | --- |
 | `name` | 設備名稱，需唯一 |
-| `ip` | Modbus TCP 設備 IP |
-| `port` | TCP Port，通常為 `502` |
+| `check_profile` | 檢查流程：`ping`、`ping_tcp` 或 `full_stack` |
+| `ip` | 設備 IP |
+| `port` | Modbus TCP Port，通常為 `502`（完整檢查使用） |
+| `tcp_port` | Ping + TCP 檢查的目標 TCP Port（`ping_tcp` 必填） |
 | `unit_id` | Modbus Unit ID |
 | `address` | 內部協定位址，從 `0` 起算 |
 | `quantity` | 讀取數量 |
@@ -124,6 +143,15 @@ Vite 會將 `/api` 請求代理到 `http://127.0.0.1:8000`。
 | `scan_rate_ms` | 自動輪詢週期；`0` 使用預設週期 |
 | `delay_between_polls_ms` | 設備間輪詢延遲 |
 | `enabled` | 是否納入檢查與輪詢 |
+| `ping_enabled` | 是否執行 Ping |
+| `ping_attempts` | Ping 嘗試次數 |
+| `ping_timeout_ms` | 單次 Ping 逾時 |
+| `ping_interval_ms` | Ping 嘗試間隔 |
+| `tcp_check_enabled` | 是否執行 TCP Port 檢查 |
+| `tcp_timeout_ms` | TCP 連線逾時 |
+| `skip_when_ping_failed` | Ping 失敗時是否略過後續階段 |
+| `max_latency_ms` | 選填的延遲門檻 |
+| `max_loss_percent` | 選填的封包遺失門檻 |
 
 畫面會將功能碼 `03` 的內部位址 `0` 顯示為常見的 PLC 位址 `40001`。不同設備的位址規則可能不同，請依設備手冊確認。
 
@@ -167,27 +195,31 @@ pnpm run build
 modbusPollChecker/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI 路由與啟動入口
-│   │   ├── check_service.py     # 單台與批次檢查服務
-│   │   ├── modbus_adapter.py    # Modbus TCP 連線實作
-│   │   ├── schemas.py            # API 與領域資料模型
-│   │   └── site_store.py         # 案場設定保存
-│   ├── tests/                    # backend 單元與 API 測試
+│   │   ├── main.py                    # FastAPI 路由與啟動入口
+│   │   ├── schemas.py                 # API 與領域資料模型
+│   │   ├── check_service.py           # Modbus 檢查服務
+│   │   ├── modbus_adapter.py          # Modbus TCP 連線實作
+│   │   ├── network_adapter.py         # Ping 與 TCP Port 探測
+│   │   ├── site_store.py              # 案場設定保存
+│   │   ├── domain/                    # 檢查流程、診斷、健康摘要與領域模型
+│   │   ├── ports/                     # 檢查、歷史與報告的介面定義
+│   │   ├── services/                  # 批次、比較、趨勢與報告服務
+│   │   ├── repositories/              # SQLite 歷史儲存與 migrations
+│   │   └── renderers/                 # CSV 與 HTML 報告產生
+│   ├── tests/                         # backend 單元與 API 測試
 │   └── requirements.txt
 ├── config/
-│   └── devices.csv              # 初始設備清單
+│   └── devices.csv                    # 初始設備清單
 ├── data/
-│   └── *.json                   # 案場設定檔
+│   └── *.json                         # 案場設定檔
 ├── frontend/
 │   ├── src/
-│   │   ├── App.tsx              # 頁面狀態協調與模組組合
-│   │   ├── components/          # SiteHeader、DeviceTable、DeviceEditor 等 UI
-│   │   └── api/client.ts         # frontend API client
+│   │   ├── App.tsx                    # 頁面狀態協調與模組組合
+│   │   ├── components/                # NetworkPanel、DeviceRegressionPanel、DeviceEditor 等 UI
+│   │   └── api/client.ts              # frontend API client
 │   └── package.json
-├── docs/
-│   ├── DEVELOPMENT.md           # 原始需求與技術方向
-│   └── INITIAL_DEVELOPMENT.md   # 初始開發記錄
-└── start.bat                    # Windows 一鍵啟動
+├── docs/                              # 開發與規格文件
+└── start.bat                          # Windows 一鍵啟動
 ```
 
 ## 架構概覽
@@ -199,13 +231,30 @@ React + Ant Design
         ▼
 FastAPI
         │
-        ├── Check service
-        ├── Modbus TCP adapter ─── 現場設備
+        ├── Device check service
+        ├── Network adapter (Ping / TCP) ─── 現場設備
+        ├── Modbus TCP adapter ───────────── 現場設備
         ├── Site configuration store
         └── SQLite history repository
 ```
 
 前端負責操作介面與狀態呈現，backend 負責設備通訊、批次執行、歷史保存、基準比較與報告產生。批次執行中的設備結果會持續保存，服務重新啟動後可由歷史資料恢復批次狀態。
+
+## 主要 API
+
+| 方法 | 路徑 | 說明 |
+| --- | --- | --- |
+| `POST` | `/api/device-checks/{device_name}` | 依設備檢查流程執行即時檢查（不寫入歷史） |
+| `POST` | `/api/device-checks/batches` | 建立設備檢查批次（回歸測試） |
+| `GET` | `/api/device-checks/batches` | 列出設備檢查批次 |
+| `GET` | `/api/device-checks/batches/{batch_id}` | 取得批次結果與比較 |
+| `POST` | `/api/device-checks/batches/{batch_id}/cancel` | 取消批次 |
+| `DELETE` | `/api/device-checks/batches/{batch_id}` | 刪除批次 |
+| `GET` | `/api/device-checks/baseline` | 取得案場基準 |
+| `PUT` | `/api/device-checks/baseline` | 設定案場基準 |
+| `DELETE` | `/api/device-checks/baseline` | 清除案場基準 |
+| `GET` | `/api/device-checks/batches/{batch_id}/comparison` | 比較批次與基準 |
+| `GET` | `/api/device-checks/batches/{batch_id}/report` | 匯出 CSV 或 HTML 報告 |
 
 ## 開發注意事項
 
@@ -219,5 +268,6 @@ FastAPI
 
 - [開發文件](docs/DEVELOPMENT.md)
 - [初始開發記錄](docs/INITIAL_DEVELOPMENT.md)
+- [設備檢查重構規格](docs/DEVICE_CHECK_REFACTOR_SPEC.md)
 - [Backend requirements](backend/requirements.txt)
 - [Frontend package](frontend/package.json)
