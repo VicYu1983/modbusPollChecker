@@ -37,6 +37,16 @@ class CheckProfileTests(unittest.TestCase):
         self.assertFalse(profile.allows_modbus)
         self.assertEqual(profile.tcp_port, 8080)
 
+    def test_non_modbus_profile_does_not_validate_modbus_quantity(self) -> None:
+        device = DeviceConfig(
+            name="Host",
+            ip="192.0.2.5",
+            check_profile="ping",
+            quantity=2000,
+        )
+
+        self.assertEqual(device.quantity, 2000)
+
     def test_disabled_device_cannot_be_resolved(self) -> None:
         with self.assertRaises(CheckProfileConfigError):
             resolve_check_profile(DeviceConfig(name="Host", ip="192.0.2.4", enabled=False))

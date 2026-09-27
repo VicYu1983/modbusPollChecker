@@ -55,7 +55,7 @@ class DeviceConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_register_quantity(self) -> "DeviceConfig":
-        if self.function in {"03", "04"} and self.quantity > 125:
+        if self.check_profile == "full_stack" and self.function in {"03", "04"} and self.quantity > 125:
             raise ValueError("quantity must be between 1 and 125 for register reads")
         if self.check_profile == "ping_tcp" and self.tcp_port is None:
             raise ValueError("tcp_port is required for ping_tcp devices")
