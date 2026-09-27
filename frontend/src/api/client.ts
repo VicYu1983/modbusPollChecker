@@ -145,6 +145,9 @@ export type NetworkCheckResult = {
   modbus_status: CheckResult['status'] | null
   modbus_error_type: string | null
   modbus_error_message: string | null
+  diagnosis_summary: string | null
+  diagnosis_suggestions: string[]
+  threshold_violations: string[]
 }
 
 export type NetworkBatchStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
@@ -180,6 +183,36 @@ export type NetworkBatchDetail = {
   batch: NetworkBatch
   results: NetworkCheckRecord[]
   completed_device_count: number
+}
+
+export type NetworkDeviceTrend = {
+  device_name: string
+  current_status: NetworkCheckStatus
+  sample_count: number
+  historical_failure_count: number
+  intermittent_disconnect: boolean
+  previous_avg_latency_ms: number | null
+  current_avg_latency_ms: number | null
+  latency_delta_ms: number | null
+  latency_degraded: boolean
+  previous_avg_loss_percent: number | null
+  current_loss_percent: number | null
+  loss_delta_percent: number | null
+  loss_degraded: boolean
+  summary: string
+}
+
+export type NetworkBatchTrend = {
+  batch_id: string
+  site_name: string
+  mode: NetworkMode
+  historical_batch_count: number
+  latency_degraded_count: number
+  loss_degraded_count: number
+  intermittent_disconnect_count: number
+  summary: string
+  devices: NetworkDeviceTrend[]
+  generated_at: string
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -254,4 +287,9 @@ export const api = {
     `/api/network/batches/${encodeURIComponent(batchId)}/cancel`,
     { method: 'POST' },
   ),
+  getNetworkTrend: (batchId: string) => request<NetworkBatchTrend>(
+    `/api/network/batches/${encodeURIComponent(batchId)}/trend`,
+  ),
+  getNetworkReportUrl: (batchId: string, format: 'csv' | 'html') =>
+    `/api/network/batches/${encodeURIComponent(batchId)}/report?format=${format}`,
 }

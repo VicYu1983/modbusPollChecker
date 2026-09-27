@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { App as AntApp, Button, Col, Input, InputNumber, Pagination, Progress, Row, Select, Space, Statistic, Table, Tag, Tooltip, Typography } from "antd";
+import { Alert, App as AntApp, Button, Col, Input, InputNumber, Pagination, Progress, Row, Select, Space, Statistic, Table, Tag, Tooltip, Typography } from "antd";
 import type { TableColumnsType } from "antd";
-import { DownloadOutlined, EyeOutlined, PlayCircleOutlined, ReloadOutlined, StopOutlined } from "@ant-design/icons";
+import { DownloadOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, ReloadOutlined, StopOutlined } from "@ant-design/icons";
 import {
   api,
   type NetworkBatch,
   type NetworkBatchDetail,
   type NetworkBatchStatus,
+  type NetworkBatchTrend,
   type NetworkCheckResult,
   type NetworkCheckStatus,
+  type NetworkDeviceTrend,
   type NetworkMode,
 } from "../api/client";
 import type { Device } from "../api/mappers";
@@ -69,6 +71,7 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
   const [batchStarting, setBatchStarting] = useState(false);
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [batchDetail, setBatchDetail] = useState<NetworkBatchDetail | null>(null);
+  const [batchTrend, setBatchTrend] = useState<NetworkBatchTrend | null>(null);
   const [batches, setBatches] = useState<NetworkBatch[]>([]);
   const [batchTotal, setBatchTotal] = useState(0);
   const [historyPage, setHistoryPage] = useState(1);
@@ -82,6 +85,9 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
   const availableDevices = devices.filter(
     (device) => device.enabled && device.network_check_enabled !== false,
   );
+  const completedBatchId = batchDetail?.batch.status === "completed"
+    ? batchDetail.batch.id
+    : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -119,7 +125,6 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
         if (cancelled) return;
         setBatchDetail(detail);
         if (!isActive(detail.batch.status)) {
-          setActiveBatchId(null);
           const history = await api.listNetworkBatches(
             siteName,
             (historyPage - 1) * pageSize,
@@ -128,6 +133,7 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
           if (cancelled) return;
           setBatches(history.items);
           setBatchTotal(history.total);
+          setActiveBatchId(null);
           return;
         }
       } catch (error) {
@@ -145,6 +151,24 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [activeBatchId, historyPage, message, siteName]);
+
+  useEffect(() => {
+    if (!completedBatchId) return;
+    let cancelled = false;
+    api
+      .getNetworkTrend(completedBatchId)
+      .then((trend) => {
+        if (!cancelled) setBatchTrend(trend);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          message.error(error instanceof Error ? error.message : "網路趨勢讀取失敗");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [completedBatchId, message]);
 
   const resultByDevice = useMemo(() => {
     const results = new Map<string, NetworkCheckResult>();
@@ -181,6 +205,7 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
     try {
       const batch = await api.createNetworkBatch(siteName, mode, maxConcurrency);
       setSingleResults({});
+      setBatchTrend(null);
       setBatchDetail({ batch, results: [], completed_device_count: 0 });
       setActiveBatchId(batch.id);
       setHistoryPage(1);
@@ -224,57 +249,11 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
     try {
       const detail = await api.getNetworkBatch(batch.id);
       setBatchDetail(detail);
+      setBatchTrend(null);
       setSingleResults({});
       setActiveBatchId(isActive(detail.batch.status) ? detail.batch.id : null);
     } catch (error) {
       message.error(error instanceof Error ? error.message : "網路批次結果讀取失敗");
-    }
-  };
-
-  const downloadCsv = async (batch: NetworkBatch) => {
-    try {
-      const detail = batchDetail?.batch.id === batch.id
-        ? batchDetail
-        : await api.getNetworkBatch(batch.id);
-      const headers = [
-        "設備", "IP", "測試時間", "模式", "Ping 狀態", "Ping 次數", "成功次數",
-        "封包遺失率(%)", "Ping 平均延遲(ms)", "TCP Port", "TCP 狀態",
-        "TCP 連線時間(ms)", "失敗階段", "總狀態", "錯誤類型", "診斷",
-      ];
-      const rows = detail.results.map(({ result }) => [
-        result.device_name,
-        result.target_ip,
-        result.timestamp,
-        modeLabels[result.mode],
-        pingLabels[result.ping_state],
-        result.ping_attempts,
-        result.ping_success_count,
-        result.ping_loss_percent,
-        result.ping_avg_ms,
-        result.tcp_port,
-        tcpLabels[result.tcp_state],
-        result.tcp_connect_ms,
-        result.failure_stage,
-        statusMeta[result.overall_status].label,
-        result.error_type,
-        result.error_message,
-      ]);
-      const csvCell = (value: string | number | null) => {
-        const text = String(value ?? "");
-        const safeText = /^[\s]*[=+\-@]/.test(text) ? `'${text}` : text;
-        return `"${safeText.replaceAll('"', '""')}"`;
-      };
-      const csv = [headers, ...rows]
-        .map((row) => row.map(csvCell).join(","))
-        .join("\r\n");
-      const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${batch.id}.csv`;
-      anchor.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "網路報告下載失敗");
     }
   };
 
@@ -340,7 +319,25 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
     {
       title: "診斷",
       key: "diagnosis",
-      render: (_: unknown, device) => resultByDevice.get(device.name)?.error_message ?? "—",
+      render: (_: unknown, device) => {
+        const result = resultByDevice.get(device.name);
+        if (!result) return "—";
+        return (
+          <Tooltip
+            title={[
+              result.error_message,
+              ...(result.diagnosis_suggestions ?? []),
+            ].filter(Boolean).join("；")}
+          >
+            <div className="network-cell network-diagnosis">
+              <strong>{result.diagnosis_summary ?? result.error_message ?? "—"}</strong>
+              {(result.threshold_violations ?? []).map((violation) => (
+                <span key={violation}>{violation}</span>
+              ))}
+            </div>
+          </Tooltip>
+        );
+      },
     },
     {
       title: "操作",
@@ -405,10 +402,63 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
             </Tooltip>
           )}
           <Tooltip title="下載 CSV 報告">
-            <Button type="text" icon={<DownloadOutlined />} aria-label={`下載批次報告 ${batch.id}`} disabled={batch.completed_device_count === 0} onClick={() => void downloadCsv(batch)} />
+            <Button
+              type="text"
+              icon={<DownloadOutlined />}
+              aria-label={`下載 CSV 報告 ${batch.id}`}
+              href={api.getNetworkReportUrl(batch.id, "csv")}
+              disabled={batch.status !== "completed"}
+            />
+          </Tooltip>
+          <Tooltip title="下載 HTML 報告">
+            <Button
+              type="text"
+              icon={<FileTextOutlined />}
+              aria-label={`下載 HTML 報告 ${batch.id}`}
+              href={api.getNetworkReportUrl(batch.id, "html")}
+              disabled={batch.status !== "completed"}
+            />
           </Tooltip>
         </Space>
       ),
+    },
+  ];
+
+  const trendColumns: TableColumnsType<NetworkDeviceTrend> = [
+    {
+      title: "設備",
+      dataIndex: "device_name",
+      key: "device_name",
+    },
+    {
+      title: "樣本 / 歷史未通過",
+      key: "samples",
+      render: (_: unknown, trend) => `${trend.sample_count} 次 / ${trend.historical_failure_count} 次`,
+    },
+    {
+      title: "Ping 延遲差",
+      key: "latency_delta",
+      render: (_: unknown, trend) => trend.latency_delta_ms === null
+        ? "—"
+        : `${trend.latency_delta_ms > 0 ? "+" : ""}${trend.latency_delta_ms.toFixed(1)} ms`,
+    },
+    {
+      title: "封包遺失差",
+      key: "loss_delta",
+      render: (_: unknown, trend) => trend.loss_delta_percent === null
+        ? "—"
+        : `${trend.loss_delta_percent > 0 ? "+" : ""}${trend.loss_delta_percent.toFixed(1)} 個百分點`,
+    },
+    {
+      title: "間歇性異常",
+      dataIndex: "intermittent_disconnect",
+      key: "intermittent_disconnect",
+      render: (value: boolean) => value ? <Tag color="warning">曾間歇未通過</Tag> : <Tag>未發現</Tag>,
+    },
+    {
+      title: "摘要",
+      dataIndex: "summary",
+      key: "summary",
     },
   ];
 
@@ -516,6 +566,31 @@ export function NetworkPanel({ siteName, devices }: NetworkPanelProps) {
           locale={{ emptyText: availableDevices.length ? "沒有符合條件的設備" : "目前沒有啟用網路健檢的設備" }}
         />
       </section>
+
+      {batchTrend && (
+        <section className="network-trend">
+          <div className="network-section-heading">
+            <div>
+              <span className="section-kicker">RECENT HISTORY</span>
+              <h2>網路品質趨勢</h2>
+            </div>
+          </div>
+          <Alert
+            type={batchTrend.historical_batch_count === 0 ? "info" : batchTrend.latency_degraded_count + batchTrend.loss_degraded_count + batchTrend.intermittent_disconnect_count > 0 ? "warning" : "success"}
+            showIcon
+            title={batchTrend.summary}
+            description={`依最近 ${batchTrend.historical_batch_count} 個同模式完成批次比較；單台趨勢最多取 10 筆歷史樣本。`}
+          />
+          <Table<NetworkDeviceTrend>
+            rowKey="device_name"
+            columns={trendColumns}
+            dataSource={batchTrend.devices}
+            pagination={false}
+            scroll={{ x: 800 }}
+            locale={{ emptyText: "此批次沒有可比較的設備結果" }}
+          />
+        </section>
+      )}
 
       <section className="network-history">
         <div className="network-section-heading">

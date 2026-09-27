@@ -136,6 +136,9 @@ class NetworkCheckResult(BaseModel):
     modbus_status: Status | None = None
     modbus_error_type: str | None = None
     modbus_error_message: str | None = None
+    diagnosis_summary: str | None = None
+    diagnosis_suggestions: list[str] = Field(default_factory=list)
+    threshold_violations: list[str] = Field(default_factory=list)
 
 
 class BatchCreateRequest(BaseModel):

@@ -12,6 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from urllib.parse import quote
 
 from .check_service import CheckService
+from .domain.network_diagnosis import diagnose_network
 from .network_adapter import NetworkAdapter
 from .domain.models import (
     BatchComparison,
@@ -24,7 +25,10 @@ from .domain.network_models import (
     NetworkBatch,
     NetworkBatchDetailResponse,
     NetworkBatchListResponse,
+    NetworkBatchTrend,
 )
+from .renderers.network_csv_report import NetworkCsvReportRenderer
+from .renderers.network_html_report import NetworkHtmlReportRenderer
 from .repositories.sqlite_history import SqliteHistoryRepository
 from .renderers.csv_report import CsvReportRenderer
 from .renderers.html_report import HtmlReportRenderer
@@ -44,6 +48,8 @@ from .services.network_batch_service import (
     NetworkBatchAlreadyRunningError,
     NetworkBatchService,
 )
+from .services.network_report_service import NetworkReportService
+from .services.network_trend_service import NetworkTrendService
 from .ports.history import (
     BatchIsBaselineError,
     BatchNotDeletableError,
@@ -74,6 +80,12 @@ network_batch_service = NetworkBatchService(
     history,
     network_adapter,
     modbus_checker=check_service.adapter,
+)
+network_trend_service = NetworkTrendService(history)
+network_report_service = NetworkReportService(
+    history,
+    network_trend_service,
+    {"csv": NetworkCsvReportRenderer(), "html": NetworkHtmlReportRenderer()},
 )
 comparison_service = ComparisonService(history)
 batch_service = BatchService(
@@ -216,6 +228,7 @@ async def check_network_device(request: NetworkCheckRequest) -> NetworkCheckResu
             result.failure_stage = "MODBUS"
             result.error_type = modbus_result.error_type
             result.error_message = modbus_result.error_message
+            result = diagnose_network(result, device)
     return result
 
 
@@ -257,6 +270,37 @@ def get_network_check_batch(batch_id: str) -> NetworkBatchDetailResponse:
         return network_batch_service.get_batch(batch_id)
     except LookupError as error:
         raise HTTPException(status_code=404, detail="network batch not found") from error
+
+
+@app.get("/api/network/batches/{batch_id}/trend", response_model=NetworkBatchTrend)
+def get_network_batch_trend(batch_id: str) -> NetworkBatchTrend:
+    try:
+        return network_trend_service.compare(batch_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="network batch not found") from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get("/api/network/batches/{batch_id}/report")
+def download_network_batch_report(
+    batch_id: str,
+    report_format: str = Query(alias="format", pattern="^(csv|html)$"),
+) -> Response:
+    try:
+        report = network_report_service.render(batch_id, report_format)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="network batch not found") from error
+    except UnsupportedReportFormatError as error:
+        raise HTTPException(status_code=422, detail="unsupported report format") from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    disposition = f"attachment; filename*=UTF-8''{quote(report.filename)}"
+    return Response(
+        content=report.content,
+        media_type=report.content_type,
+        headers={"Content-Disposition": disposition},
+    )
 
 
 @app.post("/api/network/batches/{batch_id}/cancel", response_model=NetworkBatch)

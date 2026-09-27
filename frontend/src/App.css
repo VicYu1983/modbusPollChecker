@@ -23,6 +23,9 @@
 .network-cell span { color:var(--muted); font-size:12px; }
 .network-history { margin-top:36px; padding-top:4px; border-top:1px solid var(--line); }
 .network-pagination { display:flex; justify-content:flex-end; padding-top:16px; }
+.network-trend { margin-top:32px; padding-top:6px; border-top:1px solid var(--line); }
+.network-trend .ant-alert { margin-bottom:12px; }
+.network-diagnosis { min-width:180px; white-space:normal; }
 @media (max-width:680px) {
 	.network-controls { align-items:stretch; }
 	.network-control-field { flex:1 1 150px; }

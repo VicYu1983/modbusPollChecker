@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import monotonic
 
+from .domain.network_diagnosis import diagnose_network
 from .schemas import DeviceConfig, NetworkCheckResult, NetworkMode
 
 
@@ -39,7 +40,7 @@ class NetworkAdapter:
         tcp_port = device.tcp_port or device.port
 
         if device.ip.version != 4:
-            return NetworkCheckResult(
+            return diagnose_network(NetworkCheckResult(
                 device_name=device.name,
                 target_ip=device.ip,
                 timestamp=started_at,
@@ -53,10 +54,13 @@ class NetworkAdapter:
                 failure_stage="CONFIG",
                 error_type="ipv4_required",
                 error_message="第一版僅支援 IPv4，未執行網路測試。",
-            )
+            ), device)
 
         if not device.network_check_enabled:
-            return self._config_error(device, mode, started_at, "network_check_disabled", "此設備未啟用網路健檢。")
+            return diagnose_network(
+                self._config_error(device, mode, started_at, "network_check_disabled", "此設備未啟用網路健檢。"),
+                device,
+            )
 
         ping = await self._ping_device(device) if device.ping_enabled else PingProbeResult(
             state="NOT_SUPPORTED", success_count=0, error_type="ping_disabled", error_message="Ping 未啟用。"
@@ -75,7 +79,7 @@ class NetworkAdapter:
         latencies = ping.latencies_ms
         attempts = device.ping_attempts if device.ping_enabled else 0
         successful_pings = min(ping.success_count, attempts)
-        return NetworkCheckResult(
+        return diagnose_network(NetworkCheckResult(
             device_name=device.name,
             target_ip=device.ip,
             timestamp=started_at,
@@ -94,7 +98,7 @@ class NetworkAdapter:
             failure_stage=failure_stage,
             error_type=error_type or tcp.error_type or ping.error_type,
             error_message=error_message or tcp.error_message or ping.error_message,
-        )
+        ), device)
 
     async def _ping_device(self, device: DeviceConfig) -> PingProbeResult:
         latencies: list[float] = []

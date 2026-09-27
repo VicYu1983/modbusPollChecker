@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from threading import Event, Lock
 from uuid import uuid4
 
+from ..domain.network_diagnosis import diagnose_network
 from ..domain.network_models import (
     NetworkBatch,
     NetworkBatchCounts,
@@ -178,6 +179,7 @@ class NetworkBatchService:
                         result.modbus_status = "UNKNOWN"
                         result.modbus_error_type = result.error_type
                         result.modbus_error_message = result.error_message
+                    result = diagnose_network(result, device)
                 return device, result
 
         tasks = {asyncio.create_task(check_one(device)) for device in devices}
