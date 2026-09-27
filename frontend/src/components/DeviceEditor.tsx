@@ -124,12 +124,9 @@ export function DeviceEditor({ form, editing, onSubmit }: DeviceEditorProps) {
           </Form.Item>
         </Col>
       </Row>}
-      <Form.Item label="納入設備檢查" name="network_check_enabled" valuePropName="checked">
+      <Form.Item label="啟用設備檢查" name="enabled" valuePropName="checked">
         <Switch />
       </Form.Item>
-      {isFullStack && <Form.Item label="啟用 Modbus 輪詢" name="enabled" valuePropName="checked">
-        <Switch />
-      </Form.Item>}
       <Button block type="primary" htmlType="submit" icon={<PlusOutlined />}>
         {editing ? "儲存連線設定" : "儲存連線設定"}
       </Button>

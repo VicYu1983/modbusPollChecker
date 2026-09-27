@@ -20,8 +20,6 @@ class ExecutableCheckProfile:
 def resolve_check_profile(device: DeviceConfig) -> ExecutableCheckProfile:
     if not device.enabled:
         raise CheckProfileConfigError("設備未啟用。")
-    if not device.network_check_enabled:
-        raise CheckProfileConfigError("設備未啟用設備檢查。")
 
     if device.check_profile == "ping":
         return ExecutableCheckProfile("ping", "network_only", False, None)

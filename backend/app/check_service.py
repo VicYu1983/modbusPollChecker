@@ -28,7 +28,6 @@ class CheckService:
             device
             for device in config.devices
             if device.enabled
-            and device.network_check_enabled
             and device.check_profile == "full_stack"
         ]
         if device_name:
@@ -87,7 +86,6 @@ class CheckService:
             devices = [
                 device for device in config.devices
                 if device.enabled
-                and device.network_check_enabled
                 and device.check_profile == "full_stack"
             ]
             active_names = {device.name for device in devices}

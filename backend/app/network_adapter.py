@@ -60,12 +60,6 @@ class NetworkAdapter:
                 error_message="第一版僅支援 IPv4，未執行網路測試。",
             ), device)
 
-        if not device.network_check_enabled:
-            return diagnose_network(
-                self._config_error(device, mode, started_at, "network_check_disabled", "此設備未啟用網路健檢。"),
-                device,
-            )
-
         ping = await self._ping_device(device) if device.ping_enabled else PingProbeResult(
             state="NOT_SUPPORTED", success_count=0, error_type="ping_disabled", error_message="Ping 未啟用。"
         )

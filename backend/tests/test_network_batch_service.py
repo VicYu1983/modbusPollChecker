@@ -80,7 +80,7 @@ class NetworkBatchServiceTests(unittest.TestCase):
                 DeviceConfig(
                     name=f"PLC-{index}",
                     ip=f"192.0.2.{index}",
-                    network_check_enabled=index != count,
+                    enabled=index != count,
                 )
                 for index in range(1, count + 1)
             ],

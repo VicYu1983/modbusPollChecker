@@ -23,9 +23,17 @@
 .network-cell span { color:var(--muted); font-size:12px; }
 .network-history { margin-top:36px; padding-top:4px; border-top:1px solid var(--line); }
 .network-pagination { display:flex; justify-content:flex-end; padding-top:16px; }
-.network-trend { margin-top:32px; padding-top:6px; border-top:1px solid var(--line); }
+.network-trend { margin-top:8px; padding-top:6px; }
 .network-trend .ant-alert { margin-bottom:12px; }
 .network-diagnosis { min-width:180px; white-space:normal; }
+.network-collapse { margin-top:20px; background:transparent; border:0; }
+.network-collapse > .ant-collapse-item { margin-bottom:14px; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,.62); overflow:hidden; }
+.network-collapse > .ant-collapse-item > .ant-collapse-header { align-items:center; padding:16px 20px; }
+.network-collapse .ant-collapse-content { border-top:1px solid var(--line); background:transparent; }
+.network-collapse .ant-collapse-content-box { padding:20px; }
+.network-collapse-label h2 { margin:5px 0 0; color:var(--ink); font-size:18px; }
+.network-collapse .network-section-heading { margin-top:0; }
+.network-collapse .network-metrics { margin-top:0; }
 @media (max-width:680px) {
 	.network-controls { align-items:stretch; }
 	.network-control-field { flex:1 1 150px; }

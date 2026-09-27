@@ -40,7 +40,7 @@ class NetworkAdapterTests(unittest.IsolatedAsyncioTestCase):
 
     def test_legacy_device_config_gets_network_defaults(self) -> None:
         device = DeviceConfig.model_validate({"name": "Legacy", "ip": "192.0.2.1"})
-        self.assertTrue(device.network_check_enabled)
+        self.assertTrue(device.enabled)
         self.assertEqual(device.ping_attempts, 4)
         self.assertEqual(device.tcp_timeout_ms, 2000)
         self.assertIsNone(device.tcp_port)

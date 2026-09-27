@@ -101,7 +101,7 @@ function DeleteSavedSiteButton() {
 
 function Dashboard() {
   const batchPageSize = 25;
-  const [activeModule, setActiveModule] = useState("connection");
+  const [activeModule, setActiveModule] = useState("device");
   const [siteName, setSiteName] = useState("未命名案場");
   const [devices, setDevices] = useState<Device[]>([]);
   const [editing, setEditing] = useState<Device | null>(null);
@@ -598,7 +598,7 @@ function Dashboard() {
             editing={editing}
             onEdit={openEdit}
             onRemove={remove}
-            onSubmit={() => form.submit()}
+            onSubmit={submit}
           />
         )}
         {activeModule === "legacy_connection" && (
@@ -727,7 +727,7 @@ function Dashboard() {
           selectedBatchIds={selectedBatchIds}
           cancellingBatchId={cancellingBatchId}
           comparisonLoadingId={comparisonLoadingId}
-          enabledDeviceCount={devices.filter((device) => device.enabled && device.network_check_enabled !== false && device.check_profile === "full_stack").length}
+          enabledDeviceCount={devices.filter((device) => device.enabled && device.check_profile === "full_stack").length}
           onBatchNoteChange={setBatchNote}
           onStartBatch={() => void startRegressionBatch()}
           onClearBaseline={clearCurrentBaseline}

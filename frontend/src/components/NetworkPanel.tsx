@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, App as AntApp, Button, Card, Col, Input, InputNumber, Pagination, Progress, Row, Select, Space, Statistic, Table, Tag, Tooltip, Typography } from "antd";
+import { Alert, App as AntApp, Button, Col, Collapse, Input, InputNumber, Pagination, Progress, Row, Select, Space, Statistic, Table, Tag, Tooltip, Typography } from "antd";
 import type { FormInstance, TableColumnsType } from "antd";
 import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, ReloadOutlined, StopOutlined } from "@ant-design/icons";
 import {
@@ -93,9 +93,7 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<NetworkCheckStatus | "ALL">("ALL");
 
-  const availableDevices = devices.filter(
-    (device) => device.enabled && device.network_check_enabled !== false,
-  );
+  const availableDevices = devices.filter((device) => device.enabled);
   const completedBatchId = batchDetail?.batch.status === "completed"
     ? batchDetail.batch.id
     : null;
@@ -534,136 +532,154 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
         </div>
       </section>
 
-      <Card
-        className="quick-panel network-editor"
-        variant="borderless"
-        title={
-          <div>
-            <span className="section-kicker">DEVICE SETUP</span>
-            <h2>{editing ? "編輯設備" : "新增設備"}</h2>
-          </div>
-        }
-      >
-        <DeviceEditor form={form} editing={editing} onSubmit={onSubmit} />
-      </Card>
+      <Collapse
+        className="network-collapse"
+        defaultActiveKey={["results"]}
+        items={[
+          {
+            key: "editor",
+            label: (
+              <div className="network-collapse-label">
+                <span className="section-kicker">DEVICE SETUP</span>
+                <h2>{editing ? "編輯設備" : "新增設備"}</h2>
+              </div>
+            ),
+            children: (
+              <DeviceEditor form={form} editing={editing} onSubmit={onSubmit} />
+            ),
+          },
+          {
+            key: "results",
+            label: (
+              <div className="network-collapse-label">
+                <span className="section-kicker">DEVICE RESULTS</span>
+                <h2>檢查結果列表</h2>
+              </div>
+            ),
+            children: (
+              <>
+                <Row gutter={[12, 12]} className="network-metrics">
+                  <Col xs={12} md={6}><Statistic title="納入設備" value={availableDevices.length} suffix="台" /></Col>
+                  <Col xs={12} md={6}><Statistic title="正常" value={onlineCount} suffix="台" /></Col>
+                  <Col xs={12} md={6}><Statistic title="異常 / 部分" value={attentionCount} suffix="台" /></Col>
+                  <Col xs={12} md={6}><Statistic title="已取得結果" value={checkedResults.length} suffix="台" /></Col>
+                </Row>
 
-      <Row gutter={[12, 12]} className="network-metrics">
-        <Col xs={12} md={6}><Statistic title="納入設備" value={availableDevices.length} suffix="台" /></Col>
-        <Col xs={12} md={6}><Statistic title="正常" value={onlineCount} suffix="台" /></Col>
-        <Col xs={12} md={6}><Statistic title="異常 / 部分" value={attentionCount} suffix="台" /></Col>
-        <Col xs={12} md={6}><Statistic title="已取得結果" value={checkedResults.length} suffix="台" /></Col>
-      </Row>
+                {batchDetail && (
+                  <section className="network-progress" aria-live="polite">
+                    <div className="regression-progress-heading">
+                      <strong>
+                        {isActive(batchDetail.batch.status)
+                          ? `批次執行中 · ${batchDetail.batch.id}`
+                          : `批次${batchStatusMeta[batchDetail.batch.status].label} · ${batchDetail.batch.id}`}
+                      </strong>
+                      <span>{batchDetail.completed_device_count} / {batchDetail.batch.device_names.length} 台</span>
+                    </div>
+                    <Progress percent={currentProgress} status={batchDetail.batch.status === "failed" ? "exception" : "normal"} />
+                  </section>
+                )}
 
-      {batchDetail && (
-        <section className="network-progress" aria-live="polite">
-          <div className="regression-progress-heading">
-            <strong>
-              {isActive(batchDetail.batch.status)
-                ? `批次執行中 · ${batchDetail.batch.id}`
-                : `批次${batchStatusMeta[batchDetail.batch.status].label} · ${batchDetail.batch.id}`}
-            </strong>
-            <span>{batchDetail.completed_device_count} / {batchDetail.batch.device_names.length} 台</span>
-          </div>
-          <Progress percent={currentProgress} status={batchDetail.batch.status === "failed" ? "exception" : "normal"} />
-        </section>
-      )}
+                <div className="network-section-heading">
+                  <Space wrap>
+                    <Input.Search aria-label="搜尋設備" placeholder="搜尋名稱或 IP" allowClear value={search} onChange={(event) => setSearch(event.target.value)} />
+                    <Select
+                      aria-label="依狀態篩選"
+                      value={statusFilter}
+                      onChange={setStatusFilter}
+                      options={[
+                        { value: "ALL", label: "全部狀態" },
+                        ...Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label })),
+                      ]}
+                      style={{ width: 140 }}
+                    />
+                  </Space>
+                </div>
+                <Table<Device>
+                  rowKey="name"
+                  columns={columns}
+                  dataSource={resultRows.map(({ device }) => device)}
+                  pagination={{ pageSize: 50, hideOnSinglePage: true, showSizeChanger: false }}
+                  scroll={{ x: 980 }}
+                  locale={{ emptyText: availableDevices.length ? "沒有符合條件的設備" : "目前沒有啟用網路健檢的設備" }}
+                />
+              </>
+            ),
+          },
+          {
+            key: "history",
+            label: (
+              <div className="network-collapse-label">
+                <span className="section-kicker">BATCH HISTORY</span>
+                <h2>批次歷史</h2>
+              </div>
+            ),
+            children: (
+              <>
+                {batchTrend && (
+                  <section className="network-trend">
+                    <div className="network-section-heading">
+                      <div>
+                        <span className="section-kicker">RECENT HISTORY</span>
+                        <h2>網路品質趨勢</h2>
+                      </div>
+                    </div>
+                    <Alert
+                      type={batchTrend.historical_batch_count === 0 ? "info" : batchTrend.latency_degraded_count + batchTrend.loss_degraded_count + batchTrend.intermittent_disconnect_count > 0 ? "warning" : "success"}
+                      showIcon
+                      title={batchTrend.summary}
+                      description={`依最近 ${batchTrend.historical_batch_count} 個同模式完成批次比較；單台趨勢最多取 10 筆歷史樣本。`}
+                    />
+                    <Table<NetworkDeviceTrend>
+                      rowKey="device_name"
+                      columns={trendColumns}
+                      dataSource={batchTrend.devices}
+                      pagination={false}
+                      scroll={{ x: 800 }}
+                      locale={{ emptyText: "此批次沒有可比較的設備結果" }}
+                    />
+                  </section>
+                )}
 
-      <section className="network-results">
-        <div className="network-section-heading">
-          <div>
-            <span className="section-kicker">DEVICE RESULTS</span>
-            <h2>設備結果</h2>
-          </div>
-          <Space wrap>
-            <Input.Search aria-label="搜尋設備" placeholder="搜尋名稱或 IP" allowClear value={search} onChange={(event) => setSearch(event.target.value)} />
-            <Select
-              aria-label="依狀態篩選"
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                { value: "ALL", label: "全部狀態" },
-                ...Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label })),
-              ]}
-              style={{ width: 140 }}
-            />
-          </Space>
-        </div>
-        <Table<Device>
-          rowKey="name"
-          columns={columns}
-          dataSource={resultRows.map(({ device }) => device)}
-          pagination={{ pageSize: 50, hideOnSinglePage: true, showSizeChanger: false }}
-          scroll={{ x: 980 }}
-          locale={{ emptyText: availableDevices.length ? "沒有符合條件的設備" : "目前沒有啟用網路健檢的設備" }}
-        />
-      </section>
-
-      {batchTrend && (
-        <section className="network-trend">
-          <div className="network-section-heading">
-            <div>
-              <span className="section-kicker">RECENT HISTORY</span>
-              <h2>網路品質趨勢</h2>
-            </div>
-          </div>
-          <Alert
-            type={batchTrend.historical_batch_count === 0 ? "info" : batchTrend.latency_degraded_count + batchTrend.loss_degraded_count + batchTrend.intermittent_disconnect_count > 0 ? "warning" : "success"}
-            showIcon
-            title={batchTrend.summary}
-            description={`依最近 ${batchTrend.historical_batch_count} 個同模式完成批次比較；單台趨勢最多取 10 筆歷史樣本。`}
-          />
-          <Table<NetworkDeviceTrend>
-            rowKey="device_name"
-            columns={trendColumns}
-            dataSource={batchTrend.devices}
-            pagination={false}
-            scroll={{ x: 800 }}
-            locale={{ emptyText: "此批次沒有可比較的設備結果" }}
-          />
-        </section>
-      )}
-
-      <section className="network-history">
-        <div className="network-section-heading">
-          <div>
-            <span className="section-kicker">BATCH HISTORY</span>
-            <h2>批次歷史</h2>
-          </div>
-          <Button icon={<ReloadOutlined />} aria-label="重新整理網路批次歷史" loading={historyLoading} onClick={() => {
-            setHistoryLoading(true);
-              void api.listDeviceCheckBatches(siteName, (historyPage - 1) * pageSize, pageSize)
-              .then((response) => {
-                setBatches(response.items);
-                setBatchTotal(response.total);
-              })
-              .catch((error: unknown) => message.error(error instanceof Error ? error.message : "網路批次歷史讀取失敗"))
-              .finally(() => setHistoryLoading(false));
-          }} />
-        </div>
-        <Table<NetworkBatch>
-          rowKey="id"
-          columns={historyColumns}
-          dataSource={batches}
-          loading={historyLoading}
-          pagination={false}
-          scroll={{ x: 760 }}
-          locale={{ emptyText: "尚無網路健檢批次" }}
-        />
-        {batchTotal > pageSize && (
-          <div className="network-pagination">
-            <Pagination
-              current={historyPage}
-              pageSize={pageSize}
-              total={batchTotal}
-              showSizeChanger={false}
-              onChange={(page) => {
-                setHistoryLoading(true);
-                setHistoryPage(page);
-              }}
-            />
-          </div>
-        )}
-      </section>
+                <div className="network-section-heading">
+                  <Button icon={<ReloadOutlined />} aria-label="重新整理網路批次歷史" loading={historyLoading} onClick={() => {
+                    setHistoryLoading(true);
+                    void api.listDeviceCheckBatches(siteName, (historyPage - 1) * pageSize, pageSize)
+                      .then((response) => {
+                        setBatches(response.items);
+                        setBatchTotal(response.total);
+                      })
+                      .catch((error: unknown) => message.error(error instanceof Error ? error.message : "網路批次歷史讀取失敗"))
+                      .finally(() => setHistoryLoading(false));
+                  }} />
+                </div>
+                <Table<NetworkBatch>
+                  rowKey="id"
+                  columns={historyColumns}
+                  dataSource={batches}
+                  loading={historyLoading}
+                  pagination={false}
+                  scroll={{ x: 760 }}
+                  locale={{ emptyText: "尚無網路健檢批次" }}
+                />
+                {batchTotal > pageSize && (
+                  <div className="network-pagination">
+                    <Pagination
+                      current={historyPage}
+                      pageSize={pageSize}
+                      total={batchTotal}
+                      showSizeChanger={false}
+                      onChange={(page) => {
+                        setHistoryLoading(true);
+                        setHistoryPage(page);
+                      }}
+                    />
+                  </div>
+                )}
+              </>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

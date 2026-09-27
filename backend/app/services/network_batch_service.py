@@ -57,7 +57,7 @@ class NetworkBatchService:
 
         available_devices = [
             device for device in config.devices
-            if device.enabled and device.network_check_enabled
+            if device.enabled
         ]
         if device_names is None:
             selected_devices = available_devices

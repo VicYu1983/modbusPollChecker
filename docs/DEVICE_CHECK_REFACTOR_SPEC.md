@@ -80,7 +80,7 @@ ping | ping_tcp | full_stack
 | 使用者改回完整檢查 | 沿用先前保存的 Modbus 設定。 |
 | 匯入 JSON | 欄位缺失採預設；非法 profile 使整批匯入失敗，不能部分套用。 |
 
-既有 `network_check_enabled` 保留為是否納入設備檢查的總開關。`enabled` 保留為設備啟用狀態。兩者任一為 `false` 時，設備檢查批次不得納入。
+`enabled` 是設備唯一的總開關：設備啟用即納入設備檢查。`network_check_enabled` 已移除，舊 JSON 若仍含此欄位會被忽略，不影響載入。
 
 ### 4.3 設備欄位規則
 
@@ -172,7 +172,7 @@ POST /api/device-checks/{device_name}
 既有 `/api/check/batches` 改為只選擇：
 
 ```text
-enabled == true AND network_check_enabled == true AND check_profile == full_stack
+enabled == true AND check_profile == full_stack
 ```
 
 若沒有 `full_stack` 設備，回傳 422 並提示「目前案場沒有啟用完整 Modbus 檢查的設備」。

@@ -34,7 +34,6 @@ class DeviceConfig(BaseModel):
     delay_between_polls_ms: int = Field(default=20, ge=0)
     enabled: bool = True
     check_profile: CheckProfile = "full_stack"
-    network_check_enabled: bool = True
     ping_enabled: bool = True
     ping_attempts: int = Field(default=4, ge=1, le=20)
     ping_timeout_ms: int = Field(default=1000, ge=1, le=60000)
@@ -52,6 +51,13 @@ class DeviceConfig(BaseModel):
         if not value.strip():
             raise ValueError("name must not be blank")
         return value.strip()
+
+    @model_validator(mode="before")
+    @classmethod
+    def drop_legacy_network_check_enabled(cls, data: object) -> object:
+        if isinstance(data, dict) and "network_check_enabled" in data:
+            data = {key: value for key, value in data.items() if key != "network_check_enabled"}
+        return data
 
     @model_validator(mode="after")
     def validate_register_quantity(self) -> "DeviceConfig":

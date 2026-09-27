@@ -14,7 +14,6 @@ export type DeviceConfig = {
   delay_between_polls_ms: number
   enabled: boolean
   check_profile: 'ping' | 'ping_tcp' | 'full_stack'
-  network_check_enabled?: boolean
   ping_enabled?: boolean
   ping_attempts?: number
   ping_timeout_ms?: number
