@@ -33,6 +33,7 @@ import { toConfig, toDevice, type Device } from "./api/mappers";
 import { DeviceEditor } from "./components/DeviceEditor";
 import { DeviceTable } from "./components/DeviceTable";
 import { deviceDefaults } from "./components/formDefaults";
+import { NetworkPanel } from "./components/NetworkPanel";
 import { RegressionPanel } from "./components/RegressionPanel";
 import { SiteHeader } from "./components/SiteHeader";
 import "./App.css";
@@ -586,6 +587,7 @@ function Dashboard() {
           onChange={setActiveModule}
           items={[
             { key: "connection", label: "連線狀況" },
+            { key: "network", label: "網路健檢" },
             { key: "regression", label: "回歸測試" },
           ]}
         />
@@ -731,6 +733,9 @@ function Dashboard() {
         />
           </>
         )}
+        <div hidden={activeModule !== "network"}>
+          <NetworkPanel siteName={siteName} devices={devices} />
+        </div>
       </main>
     </Layout>
   );

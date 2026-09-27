@@ -13,6 +13,17 @@ export type DeviceConfig = {
   scan_rate_ms: number
   delay_between_polls_ms: number
   enabled: boolean
+  network_check_enabled?: boolean
+  ping_enabled?: boolean
+  ping_attempts?: number
+  ping_timeout_ms?: number
+  ping_interval_ms?: number
+  tcp_check_enabled?: boolean
+  tcp_port?: number | null
+  tcp_timeout_ms?: number
+  skip_when_ping_failed?: boolean
+  max_latency_ms?: number | null
+  max_loss_percent?: number | null
 }
 
 export type SiteConfig = {
@@ -109,6 +120,68 @@ export type ComparisonStatus =
   | 'NEW_DEVICE'
   | 'NO_BASELINE'
 
+export type NetworkMode = 'network_only' | 'network_and_port' | 'full_stack'
+export type NetworkCheckStatus = 'PASS' | 'FAIL' | 'TIMEOUT' | 'CONFIG_ERROR' | 'PARTIAL' | 'UNKNOWN'
+
+export type NetworkCheckResult = {
+  device_name: string
+  target_ip: string
+  timestamp: string
+  mode: NetworkMode
+  ping_state: 'PASS' | 'TIMEOUT' | 'UNREACHABLE' | 'NOT_SUPPORTED' | 'UNKNOWN'
+  ping_attempts: number
+  ping_success_count: number
+  ping_loss_percent: number | null
+  ping_min_ms: number | null
+  ping_avg_ms: number | null
+  ping_max_ms: number | null
+  tcp_port: number | null
+  tcp_connect_ms: number | null
+  tcp_state: 'OPEN' | 'CLOSED' | 'TIMEOUT' | 'UNREACHABLE' | 'NOT_TESTED'
+  overall_status: NetworkCheckStatus
+  failure_stage: 'CONFIG' | 'PING' | 'TCP' | 'MODBUS' | null
+  error_type: string | null
+  error_message: string | null
+  modbus_status: CheckResult['status'] | null
+  modbus_error_type: string | null
+  modbus_error_message: string | null
+}
+
+export type NetworkBatchStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export type NetworkBatch = {
+  id: string
+  site_name: string
+  mode: NetworkMode
+  status: NetworkBatchStatus
+  device_names: string[]
+  config_snapshot: SiteConfig
+  max_concurrency: number
+  started_at: string
+  completed_at: string | null
+  completed_device_count: number
+  pass_count: number
+  fail_count: number
+  timeout_count: number
+  config_error_count: number
+  partial_count: number
+  unknown_count: number
+  error_message: string | null
+}
+
+export type NetworkCheckRecord = {
+  id: number | null
+  batch_id: string
+  result: NetworkCheckResult
+  device_snapshot: DeviceConfig
+}
+
+export type NetworkBatchDetail = {
+  batch: NetworkBatch
+  results: NetworkCheckRecord[]
+  completed_device_count: number
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
@@ -162,5 +235,23 @@ export const api = {
   clearBaseline: (siteName: string) => request<void>(
     `/api/sites/${encodeURIComponent(siteName)}/baseline`,
     { method: 'DELETE' },
+  ),
+  checkNetworkDevice: (deviceName: string, mode: NetworkMode) => request<NetworkCheckResult>(
+    '/api/network/check/one',
+    { method: 'POST', body: JSON.stringify({ device_name: deviceName, mode }) },
+  ),
+  createNetworkBatch: (siteName: string, mode: NetworkMode, maxConcurrency: number) => request<NetworkBatch>(
+    '/api/network/check',
+    { method: 'POST', body: JSON.stringify({ site_name: siteName, mode, max_concurrency: maxConcurrency }) },
+  ),
+  listNetworkBatches: (siteName: string, offset = 0, limit = 10) => request<{ items: NetworkBatch[]; total: number }>(
+    `/api/network/batches?site_name=${encodeURIComponent(siteName)}&offset=${offset}&limit=${limit}`,
+  ),
+  getNetworkBatch: (batchId: string) => request<NetworkBatchDetail>(
+    `/api/network/batches/${encodeURIComponent(batchId)}`,
+  ),
+  cancelNetworkBatch: (batchId: string) => request<NetworkBatch>(
+    `/api/network/batches/${encodeURIComponent(batchId)}/cancel`,
+    { method: 'POST' },
   ),
 }

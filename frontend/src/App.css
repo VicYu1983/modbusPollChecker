@@ -6,3 +6,30 @@
 .header-actions { display:flex; align-items:center; gap:10px; }.header-actions .ant-btn { flex:0 0 auto; }
 .regression-progress { margin:8px 0 20px; }.regression-progress-heading { display:flex; justify-content:space-between; gap:16px; color:var(--muted); font-size:13px; }.regression-progress-heading strong { color:var(--ink); }.health-summary { padding:16px 0; margin-bottom:12px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }.health-summary .ant-statistic-title { font-size:12px; }.health-summary .ant-statistic-content { font-size:20px; }.priority-anomalies { margin:8px 0 20px; }.diagnosis-suggestions { margin:0; padding-left:20px; color:var(--muted); }
 .workspace { width:100%; }
+.network-panel { min-width:0; }
+.network-controls { display:flex; align-items:flex-end; flex-wrap:wrap; gap:16px; padding:18px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.network-control-field { display:grid; gap:7px; }
+.network-control-field label { color:var(--muted); font-size:12px; }
+.network-control-actions { display:flex; flex-wrap:wrap; gap:8px; margin-left:auto; }
+.network-control-actions .ant-btn-primary { background:var(--green); box-shadow:none; }
+.network-metrics { margin:16px 0 20px; padding:14px 0; border-bottom:1px solid var(--line); }
+.network-metrics .ant-col { border-right:1px solid var(--line); }
+.network-metrics .ant-col:last-child { border-right:0; }
+.network-progress { padding:4px 0 14px; }
+.network-section-heading { display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:12px; margin:24px 0 10px; }
+.network-section-heading h2 { margin:5px 0 0; color:var(--ink); font-size:18px; }
+.network-section-heading .ant-input-search { width:230px; }
+.network-cell { display:grid; gap:3px; }
+.network-cell span { color:var(--muted); font-size:12px; }
+.network-history { margin-top:36px; padding-top:4px; border-top:1px solid var(--line); }
+.network-pagination { display:flex; justify-content:flex-end; padding-top:16px; }
+@media (max-width:680px) {
+	.network-controls { align-items:stretch; }
+	.network-control-field { flex:1 1 150px; }
+	.network-control-actions { width:100%; margin-left:0; }
+	.network-control-actions .ant-btn { flex:1; }
+	.network-section-heading { align-items:stretch; }
+	.network-section-heading > .ant-space { width:100%; }
+	.network-section-heading .ant-input-search { width:100%; }
+	.network-metrics .ant-statistic-content { font-size:20px; }
+}
