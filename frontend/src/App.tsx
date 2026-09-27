@@ -24,17 +24,14 @@ import {
 } from "@ant-design/icons";
 import {
   api,
-  type BatchDetail,
-  type CheckBatch,
   type DeviceConfig,
-  type SiteBaseline,
 } from "./api/client";
 import { toConfig, toDevice, type Device } from "./api/mappers";
 import { DeviceEditor } from "./components/DeviceEditor";
 import { DeviceTable } from "./components/DeviceTable";
 import { deviceDefaults } from "./components/formDefaults";
 import { NetworkPanel } from "./components/NetworkPanel";
-import { RegressionPanel } from "./components/RegressionPanel";
+import { DeviceRegressionPanel } from "./components/DeviceRegressionPanel";
 import { SiteHeader } from "./components/SiteHeader";
 import "./App.css";
 
@@ -100,7 +97,6 @@ function DeleteSavedSiteButton() {
 }
 
 function Dashboard() {
-  const batchPageSize = 25;
   const [activeModule, setActiveModule] = useState("device");
   const [siteName, setSiteName] = useState("未命名案場");
   const [devices, setDevices] = useState<Device[]>([]);
@@ -108,17 +104,6 @@ function Dashboard() {
   const [form] = Form.useForm();
   const [checking, setChecking] = useState(false);
   const [pollingActive, setPollingActive] = useState(false);
-  const [batches, setBatches] = useState<CheckBatch[]>([]);
-  const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
-  const [batchPage, setBatchPage] = useState(1);
-  const [batchTotal, setBatchTotal] = useState(0);
-  const [baseline, setBaseline] = useState<SiteBaseline | null>(null);
-  const [batchDetail, setBatchDetail] = useState<BatchDetail | null>(null);
-  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
-  const [batchStarting, setBatchStarting] = useState(false);
-  const [batchNote, setBatchNote] = useState("");
-  const [cancellingBatchId, setCancellingBatchId] = useState<string | null>(null);
-  const [comparisonLoadingId, setComparisonLoadingId] = useState<string | null>(null);
   const { message } = AntApp.useApp();
   const counts = useMemo(
     () => ({
@@ -165,54 +150,6 @@ function Dashboard() {
       .then((status) => setPollingActive(status.active))
       .catch(() => undefined);
   }, []);
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      api.listBatches(siteName, (batchPage - 1) * batchPageSize, batchPageSize).catch(() => null),
-      api.getBaseline(siteName).catch(() => null),
-    ]).then(([history, currentBaseline]) => {
-      if (cancelled) return;
-      setBatches(history?.items ?? []);
-      setBatchTotal(history?.total ?? 0);
-      setBaseline(currentBaseline);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [batchPage, batchPageSize, siteName]);
-  useEffect(() => {
-    if (!activeBatchId) return;
-    let cancelled = false;
-    let timer: number | undefined;
-    const refreshBatch = async () => {
-      try {
-        const detail = await api.getBatch(activeBatchId);
-        if (cancelled) return;
-        setBatchDetail(detail);
-        if (["completed", "failed", "cancelled"].includes(detail.batch.status)) {
-          const history = await api.listBatches(
-            siteName,
-            (batchPage - 1) * batchPageSize,
-            batchPageSize,
-          );
-          if (cancelled) return;
-          setBatches(history.items);
-          setBatchTotal(history.total);
-          setActiveBatchId(null);
-          return;
-        }
-      } catch {
-        if (!cancelled) setActiveBatchId(null);
-        return;
-      }
-      timer = window.setTimeout(() => void refreshBatch(), 1000);
-    };
-    void refreshBatch();
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [activeBatchId, batchPage, batchPageSize, siteName]);
   useEffect(() => {
     if (!pollingActive) return;
     const refreshStatus = () => {
@@ -265,161 +202,6 @@ function Dashboard() {
         error instanceof Error ? error.message : "自動檢查設定失敗"
       );
     }
-  };
-  const startRegressionBatch = async () => {
-    setBatchStarting(true);
-    try {
-      const batch = await api.createBatch(siteName, batchNote.trim());
-      setBatchDetail({
-        batch,
-        records: [],
-        completed_device_count: 0,
-        health_summary: {
-          device_count: 0,
-          pass_count: 0,
-          fail_count: 0,
-          timeout_count: 0,
-          config_error_count: 0,
-          pass_rate: 0,
-          avg_elapsed_ms: null,
-          slowest_device: null,
-          slowest_elapsed_ms: null,
-          new_failure_count: 0,
-        },
-      });
-      setBatchNote("");
-      setBatchPage(1);
-      setBatches((current) => [batch, ...current.filter((item) => item.id !== batch.id)]);
-      setBatchTotal((total) => total + 1);
-      setActiveBatchId(batch.id);
-      message.info("回歸檢查已開始");
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "回歸檢查啟動失敗");
-    } finally {
-      setBatchStarting(false);
-    }
-  };
-  const setBatchAsBaseline = (batch: CheckBatch) => {
-    const containsErrors =
-      batch.fail_count + batch.timeout_count + batch.config_error_count > 0;
-    Modal.confirm({
-      title: "設為案場基準",
-      content: containsErrors
-        ? "這個批次含有失敗、逾時或設定錯誤。仍要強制設為比較基準嗎？"
-        : `將 ${new Date(batch.started_at).toLocaleString()} 的完整檢查設為目前基準。`,
-      okText: containsErrors ? "仍要設為基準" : "設為基準",
-      cancelText: "取消",
-      onOk: async () => {
-        try {
-          const saved = await api.setBaseline(siteName, batch.id, containsErrors);
-          setBaseline(saved);
-          message.success("案場基準已更新");
-        } catch (error) {
-          message.error(error instanceof Error ? error.message : "基準設定失敗");
-          throw error;
-        }
-      },
-    });
-  };
-  const compareBatch = async (batch: CheckBatch) => {
-    setComparisonLoadingId(batch.id);
-    try {
-      setBatchDetail(await api.getBatch(batch.id));
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "批次比較失敗");
-    } finally {
-      setComparisonLoadingId(null);
-    }
-  };
-  const cancelBatch = async (batch: CheckBatch) => {
-    setCancellingBatchId(batch.id);
-    try {
-      const updated = await api.cancelBatch(batch.id);
-      setBatches((current) =>
-        current.map((item) => (item.id === updated.id ? updated : item))
-      );
-      message.info("已送出取消要求；目前進行中的設備讀取會完成後停止後續檢查");
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : "取消批次失敗");
-    } finally {
-      setCancellingBatchId(null);
-    }
-  };
-  const deleteBatches = (batchIds: string[]) => {
-    if (!batchIds.length) return;
-    Modal.confirm({
-      title: batchIds.length === 1 ? "刪除檢查批次" : "清理歷史批次",
-      content: `確定刪除 ${batchIds.length} 個批次及其檢查結果？此操作無法復原。`,
-      okText: "刪除",
-      cancelText: "取消",
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        const results = await Promise.allSettled(
-          batchIds.map((id) => api.deleteBatch(id))
-        );
-        const deletedIds = batchIds.filter(
-          (_, index) => results[index].status === "fulfilled"
-        );
-        const failedCount = results.length - deletedIds.length;
-        setSelectedBatchIds([]);
-        if (deletedIds.length) {
-          setBatchDetail((current) =>
-            current && deletedIds.includes(current.batch.id) ? null : current
-          );
-          const nextPage =
-            batches.length <= deletedIds.length && batchPage > 1
-              ? batchPage - 1
-              : batchPage;
-          if (nextPage !== batchPage) {
-            setBatchPage(nextPage);
-          } else {
-            try {
-              const history = await api.listBatches(
-                siteName,
-                (batchPage - 1) * batchPageSize,
-                batchPageSize
-              );
-              setBatches(history.items);
-              setBatchTotal(history.total);
-            } catch {
-              setBatches((current) =>
-                current.filter((batch) => !deletedIds.includes(batch.id))
-              );
-              setBatchTotal((total) => Math.max(0, total - deletedIds.length));
-            }
-          }
-        }
-        if (failedCount) {
-          message.error(
-            `${deletedIds.length} 個批次已刪除，${failedCount} 個刪除失敗；基準批次請先清除基準。`
-          );
-        } else {
-          message.success(`已刪除 ${deletedIds.length} 個批次及其檢查結果`);
-        }
-      },
-    });
-  };
-  const clearCurrentBaseline = () => {
-    if (!baseline) return;
-    Modal.confirm({
-      title: "清除案場基準",
-      content: "清除基準不會刪除批次資料；之後可重新指定基準。",
-      okText: "清除基準",
-      cancelText: "取消",
-      onOk: async () => {
-        try {
-          await api.clearBaseline(siteName);
-          setBaseline(null);
-          setSelectedBatchIds((current) =>
-            current.filter((id) => id !== baseline.baseline_batch_id)
-          );
-          message.success("案場基準已清除");
-        } catch (error) {
-          message.error(error instanceof Error ? error.message : "基準清除失敗");
-          throw error;
-        }
-      },
-    });
   };
   const submit = async () => {
     const values = (await form.validateFields()) as DeviceConfig;
@@ -710,37 +492,11 @@ function Dashboard() {
             <span className="section-kicker">02 / REGRESSION TESTING</span>
             <Typography.Title>回歸測試總覽</Typography.Title>
             <Typography.Paragraph>
-              設定案場基準，追蹤每次檢查結果與設備狀態變化。
+              設定案場基準，追蹤每次設備檢查結果與狀態變化（涵蓋所有檢查流程）。
             </Typography.Paragraph>
           </div>
         </section>
-        <RegressionPanel
-          batches={batches}
-          batchTotal={batchTotal}
-          batchPage={batchPage}
-          batchPageSize={batchPageSize}
-          baseline={baseline}
-          batchDetail={batchDetail}
-          activeBatchId={activeBatchId}
-          batchStarting={batchStarting}
-          batchNote={batchNote}
-          selectedBatchIds={selectedBatchIds}
-          cancellingBatchId={cancellingBatchId}
-          comparisonLoadingId={comparisonLoadingId}
-          enabledDeviceCount={devices.filter((device) => device.enabled && device.check_profile === "full_stack").length}
-          onBatchNoteChange={setBatchNote}
-          onStartBatch={() => void startRegressionBatch()}
-          onClearBaseline={clearCurrentBaseline}
-          onCancelBatch={(batch) => void cancelBatch(batch)}
-          onCompareBatch={(batch) => void compareBatch(batch)}
-          onSetBaseline={setBatchAsBaseline}
-          onDeleteBatches={deleteBatches}
-          onSelectionChange={(ids) => setSelectedBatchIds(ids)}
-          onPageChange={(page) => {
-            setSelectedBatchIds([]);
-            setBatchPage(page);
-          }}
-        />
+        <DeviceRegressionPanel siteName={siteName} devices={devices} />
           </>
         )}
       </main>

@@ -22,6 +22,7 @@ from .domain.models import (
     SiteBaseline,
 )
 from .domain.network_models import (
+    DeviceCheckBatchComparison,
     NetworkBatch,
     NetworkBatchDetailResponse,
     NetworkBatchListResponse,
@@ -36,6 +37,8 @@ from .schemas import (
     BatchCreateRequest,
     BaselineRequest,
     CheckRequest,
+    DeviceCheckBaseline,
+    DeviceCheckBaselineRequest,
     DeviceCheckRequest,
     DeviceConfig,
     ErrorResponse,
@@ -51,6 +54,7 @@ from .services.network_batch_service import (
 )
 from .services.network_report_service import NetworkReportService
 from .services.network_trend_service import NetworkTrendService
+from .services.device_check_comparison_service import DeviceCheckComparisonService
 from .ports.history import (
     BatchIsBaselineError,
     BatchNotDeletableError,
@@ -77,12 +81,14 @@ history = SqliteHistoryRepository(
         )
     )
 )
+network_trend_service = NetworkTrendService(history)
+device_check_comparison_service = DeviceCheckComparisonService(history)
 network_batch_service = NetworkBatchService(
     history,
     network_adapter,
     modbus_checker=check_service.adapter,
+    comparison=device_check_comparison_service,
 )
-network_trend_service = NetworkTrendService(history)
 network_report_service = NetworkReportService(
     history,
     network_trend_service,
@@ -357,6 +363,64 @@ def cancel_device_check_batch(batch_id: str) -> NetworkBatch:
     return cancel_network_check_batch(batch_id)
 
 
+@app.delete("/api/device-checks/batches/{batch_id}", status_code=204)
+def delete_device_check_batch(batch_id: str) -> Response:
+    try:
+        history.delete_network_batch(batch_id)
+    except BatchNotFoundError as error:
+        raise HTTPException(status_code=404, detail="device-check batch not found") from error
+    except BatchIsBaselineError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except BatchNotDeletableError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return Response(status_code=204)
+
+
+@app.get("/api/device-checks/baseline", response_model=DeviceCheckBaseline)
+def get_device_check_baseline(site_name: str) -> DeviceCheckBaseline:
+    baseline_id = device_check_comparison_service.get_baseline(site_name)
+    if baseline_id is None:
+        raise HTTPException(status_code=404, detail="baseline not found")
+    return DeviceCheckBaseline(site_name=site_name, baseline_batch_id=baseline_id)
+
+
+@app.put("/api/device-checks/baseline", response_model=DeviceCheckBaseline)
+def set_device_check_baseline(request: DeviceCheckBaselineRequest) -> DeviceCheckBaseline:
+    try:
+        updated_at = device_check_comparison_service.set_baseline(
+            request.site_name, request.batch_id
+        )
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="batch not found") from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return DeviceCheckBaseline(
+        site_name=request.site_name,
+        baseline_batch_id=request.batch_id,
+        updated_at=updated_at,
+    )
+
+
+@app.delete("/api/device-checks/baseline", status_code=204)
+def clear_device_check_baseline(site_name: str) -> Response:
+    if not device_check_comparison_service.clear_baseline(site_name):
+        raise HTTPException(status_code=404, detail="baseline not found")
+    return Response(status_code=204)
+
+
+@app.get(
+    "/api/device-checks/batches/{batch_id}/comparison",
+    response_model=DeviceCheckBatchComparison,
+)
+def compare_device_check_batch(batch_id: str) -> DeviceCheckBatchComparison:
+    try:
+        return device_check_comparison_service.compare(batch_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="batch not found") from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
 @app.post("/api/device-checks/{device_name}", response_model=NetworkCheckResult)
 async def check_device_by_profile(
     device_name: str,
@@ -375,6 +439,7 @@ async def check_device_by_profile(
         result.modbus_status = modbus_result.status
         result.modbus_error_type = modbus_result.error_type
         result.modbus_error_message = modbus_result.error_message
+        result.modbus_result = modbus_result
         if modbus_result.status != "PASS":
             result.overall_status = modbus_result.status
             result.failure_stage = "MODBUS"

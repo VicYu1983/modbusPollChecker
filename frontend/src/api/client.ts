@@ -184,6 +184,42 @@ export type NetworkBatchDetail = {
   batch: NetworkBatch
   results: NetworkCheckRecord[]
   completed_device_count: number
+  comparison: DeviceCheckBatchComparison | null
+}
+
+export type DeviceComparisonStatus =
+  | 'UNCHANGED_PASS'
+  | 'UNCHANGED_FAILURE'
+  | 'NEW_FAILURE'
+  | 'RECOVERED'
+  | 'VALUE_CHANGED'
+  | 'LATENCY_DEGRADED'
+  | 'CONFIG_CHANGED'
+  | 'BASELINE_ONLY'
+  | 'NEW_DEVICE'
+  | 'NO_BASELINE'
+
+export type DeviceCheckComparison = {
+  device_name: string
+  status: DeviceComparisonStatus
+  current_status: string | null
+  baseline_status: string | null
+  latency_delta_ms: number | null
+  loss_delta_percent: number | null
+  value_changed: boolean
+}
+
+export type DeviceCheckBatchComparison = {
+  batch_id: string
+  baseline_batch_id: string | null
+  baseline_set_at: string | null
+  comparisons: DeviceCheckComparison[]
+}
+
+export type DeviceCheckBaseline = {
+  site_name: string
+  baseline_batch_id: string
+  updated_at: string | null
 }
 
 export type NetworkDeviceTrend = {
@@ -310,5 +346,23 @@ export const api = {
   cancelDeviceCheckBatch: (batchId: string) => request<NetworkBatch>(
     `/api/device-checks/batches/${encodeURIComponent(batchId)}/cancel`,
     { method: 'POST' },
+  ),
+  deleteDeviceCheckBatch: (batchId: string) => request<void>(
+    `/api/device-checks/batches/${encodeURIComponent(batchId)}`,
+    { method: 'DELETE' },
+  ),
+  getDeviceCheckBaseline: (siteName: string) => request<DeviceCheckBaseline>(
+    `/api/device-checks/baseline?site_name=${encodeURIComponent(siteName)}`,
+  ),
+  setDeviceCheckBaseline: (siteName: string, batchId: string) => request<DeviceCheckBaseline>(
+    '/api/device-checks/baseline',
+    { method: 'PUT', body: JSON.stringify({ site_name: siteName, batch_id: batchId }) },
+  ),
+  clearDeviceCheckBaseline: (siteName: string) => request<void>(
+    `/api/device-checks/baseline?site_name=${encodeURIComponent(siteName)}`,
+    { method: 'DELETE' },
+  ),
+  compareDeviceCheckBatch: (batchId: string) => request<DeviceCheckBatchComparison>(
+    `/api/device-checks/batches/${encodeURIComponent(batchId)}/comparison`,
   ),
 }

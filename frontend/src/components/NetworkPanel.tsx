@@ -219,7 +219,7 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
       const batch = await api.createDeviceCheckBatch(siteName, maxConcurrency);
       setSingleResults({});
       setBatchTrend(null);
-      setBatchDetail({ batch, results: [], completed_device_count: 0 });
+      setBatchDetail({ batch, results: [], completed_device_count: 0, comparison: null });
       setActiveBatchId(batch.id);
       setHistoryPage(1);
       setBatches((current) => [batch, ...current.filter((item) => item.id !== batch.id)]);

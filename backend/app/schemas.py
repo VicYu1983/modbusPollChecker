@@ -121,6 +121,17 @@ class DeviceCheckRequest(BaseModel):
     pass
 
 
+class DeviceCheckBaselineRequest(BaseModel):
+    site_name: str = Field(min_length=1, max_length=100)
+    batch_id: str = Field(min_length=1)
+
+
+class DeviceCheckBaseline(BaseModel):
+    site_name: str
+    baseline_batch_id: str
+    updated_at: datetime | None = None
+
+
 class NetworkBatchCreateRequest(BaseModel):
     site_name: str | None = None
     device_names: list[str] | None = None
@@ -151,6 +162,7 @@ class NetworkCheckResult(BaseModel):
     modbus_status: Status | None = None
     modbus_error_type: str | None = None
     modbus_error_message: str | None = None
+    modbus_result: CheckResult | None = None
     diagnosis_summary: str | None = None
     diagnosis_suggestions: list[str] = Field(default_factory=list)
     threshold_violations: list[str] = Field(default_factory=list)

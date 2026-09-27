@@ -52,6 +52,38 @@ class NetworkBatchDetailResponse(BaseModel):
     batch: NetworkBatch
     results: list[NetworkCheckRecord]
     completed_device_count: int
+    comparison: "DeviceCheckBatchComparison | None" = None
+
+
+DeviceComparisonStatus = Literal[
+    "UNCHANGED_PASS",
+    "UNCHANGED_FAILURE",
+    "NEW_FAILURE",
+    "RECOVERED",
+    "VALUE_CHANGED",
+    "LATENCY_DEGRADED",
+    "CONFIG_CHANGED",
+    "BASELINE_ONLY",
+    "NEW_DEVICE",
+    "NO_BASELINE",
+]
+
+
+class DeviceCheckComparison(BaseModel):
+    device_name: str
+    status: DeviceComparisonStatus
+    current_status: str | None = None
+    baseline_status: str | None = None
+    latency_delta_ms: float | None = None
+    loss_delta_percent: float | None = None
+    value_changed: bool = False
+
+
+class DeviceCheckBatchComparison(BaseModel):
+    batch_id: str
+    baseline_batch_id: str | None = None
+    baseline_set_at: datetime | None = None
+    comparisons: list[DeviceCheckComparison]
 
 
 class NetworkBatchListResponse(BaseModel):

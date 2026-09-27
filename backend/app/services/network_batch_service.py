@@ -18,6 +18,7 @@ from ..ports.checker import DeviceChecker
 from ..ports.network_history import NetworkHistoryRepository
 from ..schemas import DeviceConfig, NetworkCheckResult, NetworkMode, SiteConfig
 from ..network_adapter import NetworkAdapter
+from .device_check_comparison_service import DeviceCheckComparisonService
 
 
 class NetworkBatchAlreadyRunningError(RuntimeError):
@@ -32,10 +33,12 @@ class NetworkBatchService:
         *,
         modbus_checker: DeviceChecker | None = None,
         max_concurrency_limit: int = 50,
+        comparison: "DeviceCheckComparisonService | None" = None,
     ) -> None:
         self.history = history
         self.adapter = adapter
         self.modbus_checker = modbus_checker
+        self.comparison = comparison
         self.max_concurrency_limit = max_concurrency_limit
         self._batch_executor = ThreadPoolExecutor(max_workers=1)
         self._lock = Lock()
@@ -172,6 +175,7 @@ class NetworkBatchService:
                         result.modbus_status = modbus.status
                         result.modbus_error_type = modbus.error_type
                         result.modbus_error_message = modbus.error_message
+                        result.modbus_result = modbus
                         if modbus.status != "PASS":
                             result.overall_status = modbus.status
                             result.failure_stage = "MODBUS"
@@ -290,10 +294,17 @@ class NetworkBatchService:
     def get_batch(self, batch_id: str) -> NetworkBatchDetailResponse:
         batch = self.history.get_network_batch(batch_id)
         results = self.history.list_network_results(batch_id)
+        comparison = None
+        if batch.status == "completed" and self.comparison is not None:
+            try:
+                comparison = self.comparison.compare(batch_id)
+            except ValueError:
+                comparison = None
         return NetworkBatchDetailResponse(
             batch=batch,
             results=results,
             completed_device_count=len(results),
+            comparison=comparison,
         )
 
     def shutdown(self) -> None:

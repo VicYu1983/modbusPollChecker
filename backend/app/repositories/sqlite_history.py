@@ -278,6 +278,25 @@ class SqliteHistoryRepository:
             ).fetchall()
         return [self._network_batch_from_row(row) for row in rows], total
 
+    def delete_network_batch(self, batch_id: str) -> None:
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT status FROM network_batches WHERE id = ?", (batch_id,)
+            ).fetchone()
+            if row is None:
+                raise BatchNotFoundError(batch_id)
+            baseline = connection.execute(
+                "SELECT 1 FROM device_check_baselines WHERE baseline_batch_id = ? LIMIT 1",
+                (batch_id,),
+            ).fetchone()
+            if baseline is not None:
+                raise BatchIsBaselineError("目前基準批次不可刪除，請先清除基準")
+            if row["status"] in {"pending", "running"}:
+                raise BatchNotDeletableError("執行中的批次不可刪除")
+            connection.execute("DELETE FROM network_results WHERE batch_id = ?", (batch_id,))
+            connection.execute("DELETE FROM network_batches WHERE id = ?", (batch_id,))
+
     def save_network_result(
         self,
         record: NetworkCheckRecord,
@@ -320,6 +339,35 @@ class SqliteHistoryRepository:
                 (batch_id,),
             ).fetchall()
         return [self._network_result_from_row(row) for row in rows]
+
+    def set_device_check_baseline(self, site_name: str, batch_id: str) -> datetime:
+        updated_at = datetime.now(timezone.utc)
+        with self._connection() as connection:
+            connection.execute(
+                """INSERT INTO device_check_baselines (site_name, baseline_batch_id, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(site_name) DO UPDATE SET
+                    baseline_batch_id = excluded.baseline_batch_id,
+                    updated_at = excluded.updated_at""",
+                (site_name, batch_id, updated_at.isoformat()),
+            )
+        return updated_at
+
+    def get_device_check_baseline(self, site_name: str) -> str | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT baseline_batch_id FROM device_check_baselines WHERE site_name = ?",
+                (site_name,),
+            ).fetchone()
+        return row["baseline_batch_id"] if row else None
+
+    def clear_device_check_baseline(self, site_name: str) -> bool:
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM device_check_baselines WHERE site_name = ?",
+                (site_name,),
+            )
+        return cursor.rowcount > 0
 
     def list_records(self, batch_id: str) -> list[CheckRecord]:
         with self._connection() as connection:
