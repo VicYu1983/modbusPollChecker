@@ -64,6 +64,7 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
   const [singleResults, setSingleResults] = useState<Record<string, NetworkCheckResult>>({});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<NetworkCheckStatus | "ALL">("ALL");
+  const [profileFilter, setProfileFilter] = useState<Device["check_profile"] | "ALL">("ALL");
   const [autoCheck, setAutoCheck] = useState(false);
   const [autoIntervalMs, setAutoIntervalMs] = useState(600000);
   const [autoChecking, setAutoChecking] = useState(false);
@@ -89,12 +90,13 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
       .filter((device) => !needle || `${device.name} ${device.ip}`.toLocaleLowerCase().includes(needle))
       .map((device) => ({ device, result: resultByDevice.get(device.name) }))
       .filter(({ result }) => statusFilter === "ALL" || result?.overall_status === statusFilter)
+      .filter(({ device }) => profileFilter === "ALL" || device.check_profile === profileFilter)
       .sort((left, right) => {
         const leftPriority = left.result ? statusMeta[left.result.overall_status].priority : 6;
         const rightPriority = right.result ? statusMeta[right.result.overall_status].priority : 6;
         return leftPriority - rightPriority || left.device.name.localeCompare(right.device.name);
       });
-  }, [availableDevices, resultByDevice, search, statusFilter]);
+  }, [availableDevices, resultByDevice, search, statusFilter, profileFilter]);
 
   const checkedResults = Array.from(resultByDevice.values());
   const onlineCount = checkedResults.filter((result) => result.overall_status === "PASS").length;
@@ -508,6 +510,18 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
                       options={[
                         { value: "ALL", label: "全部狀態" },
                         ...Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label })),
+                      ]}
+                      style={{ width: 140 }}
+                    />
+                    <Select
+                      aria-label="依檢查流程篩選"
+                      value={profileFilter}
+                      onChange={setProfileFilter}
+                      options={[
+                        { value: "ALL", label: "全部流程" },
+                        ...(Object.entries(profileLabels) as Array<[Device["check_profile"], string]>).map(
+                          ([value, label]) => ({ value, label }),
+                        ),
                       ]}
                       style={{ width: 140 }}
                     />
