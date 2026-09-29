@@ -185,6 +185,7 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
     {
       title: "設備",
       key: "device",
+      sorter: (a, b) => a.name.localeCompare(b.name, "zh-Hant"),
       render: (_: unknown, device) => (
         <div className="device-name">
           <strong>{device.name}</strong>
