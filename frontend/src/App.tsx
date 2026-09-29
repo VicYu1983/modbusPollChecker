@@ -203,7 +203,7 @@ function Dashboard() {
       );
     }
   };
-  const submit = async () => {
+  const submit = async (): Promise<boolean> => {
     const values = (await form.validateFields()) as DeviceConfig;
     const next = { ...values, expected: values.expected || null };
     try {
@@ -236,10 +236,12 @@ function Dashboard() {
       form.setFieldsValue({ check_profile: next.check_profile });
       message.success(editing ? "連線設定已更新" : "連線已新增");
       await runCheck();
+      return true;
     } catch (error) {
       message.error(
         error instanceof Error ? error.message : "連線設定儲存失敗"
       );
+      return false;
     }
   };
   const openEdit = (device: Device) => {
@@ -485,7 +487,7 @@ function Dashboard() {
               </div>
             }
           >
-            <DeviceEditor form={form} editing={editing} onSubmit={submit} />
+            <DeviceEditor form={form} onSubmit={submit} />
           </Card>
         </section>
           </>

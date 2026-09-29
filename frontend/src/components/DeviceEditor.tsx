@@ -1,17 +1,14 @@
-import { PlusOutlined } from "@ant-design/icons";
-import { Button, Col, Divider, Form, Input, InputNumber, Row, Segmented, Select, Switch } from "antd";
+import { Col, Divider, Form, Input, InputNumber, Row, Segmented, Select, Switch } from "antd";
 import type { FormInstance } from "antd";
 import type { DeviceConfig } from "../api/client";
-import type { Device } from "../api/mappers";
 import { deviceDefaults } from "./formDefaults";
 
 type DeviceEditorProps = {
   form: FormInstance<DeviceConfig>;
-  editing: Device | null;
-  onSubmit: () => void | Promise<void>;
+  onSubmit: () => boolean | Promise<boolean>;
 };
 
-export function DeviceEditor({ form, editing, onSubmit }: DeviceEditorProps) {
+export function DeviceEditor({ form, onSubmit }: DeviceEditorProps) {
   const profile = Form.useWatch("check_profile", form) ?? "full_stack";
   const isFullStack = profile === "full_stack";
   return (
@@ -127,9 +124,6 @@ export function DeviceEditor({ form, editing, onSubmit }: DeviceEditorProps) {
       <Form.Item label="啟用設備檢查" name="enabled" valuePropName="checked">
         <Switch />
       </Form.Item>
-      <Button block type="primary" htmlType="submit" icon={<PlusOutlined />}>
-        {editing ? "儲存連線設定" : "儲存連線設定"}
-      </Button>
     </Form>
   );
 }

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, App as AntApp, Button, Col, Collapse, Input, InputNumber, Row, Segmented, Select, Space, Statistic, Switch, Table, Tag, Tooltip, Typography } from "antd";
+import { Alert, App as AntApp, Button, Col, Collapse, Input, InputNumber, Modal, Row, Select, Space, Statistic, Switch, Table, Tag, Tooltip, Typography } from "antd";
 import type { FormInstance, TableColumnsType } from "antd";
 import { DeleteOutlined, EditOutlined, PlayCircleOutlined, ReloadOutlined } from "@ant-design/icons";
+import { PlusOutlined } from "@ant-design/icons";
 import {
   api,
   type DeviceConfig,
@@ -51,13 +52,12 @@ type NetworkPanelProps = {
   editing: Device | null;
   onEdit: (device: Device) => void;
   onRemove: (device: Device) => void;
-  onSubmit: () => void | Promise<void>;
+  onSubmit: () => boolean | Promise<boolean>;
   onBatchAdded: (added: DeviceConfig[]) => void | Promise<void>;
 };
 
 export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemove, onSubmit, onBatchAdded }: NetworkPanelProps) {
   const { message } = AntApp.useApp();
-  const [addMode, setAddMode] = useState<"single" | "batch">("single");
   const [maxConcurrency, setMaxConcurrency] = useState(20);
   const [checkingAll, setCheckingAll] = useState(false);
   const [checkingDevice, setCheckingDevice] = useState<string | null>(null);
@@ -68,6 +68,8 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
   const [autoIntervalMs, setAutoIntervalMs] = useState(600000);
   const [autoChecking, setAutoChecking] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ batchId: string; completed: number; total: number } | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
   const autoCheckRef = useRef(false);
   const batchPollRef = useRef<number | undefined>(undefined);
 
@@ -177,6 +179,23 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
     } finally {
       setCheckingDevice(null);
     }
+  };
+
+  /** 開啟編輯彈窗（新增或修改） */
+  const openEditor = (device?: Device) => {
+    if (device) onEdit(device);
+    else {
+      form.resetFields();
+      form.setFieldsValue({ check_profile: "full_stack" });
+    }
+    setEditorOpen(true);
+  };
+
+  /** 彩窗送出：成功後關閉彈窗 */
+  const submitAndClose = async (): Promise<boolean> => {
+    const ok = await onSubmit();
+    if (ok) setEditorOpen(false);
+    return ok;
   };
 
   const runAutoCheck = async () => {
@@ -323,7 +342,7 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
               onClick={() => void checkOne(device)}
             />
           </Tooltip>
-          <Button type="text" icon={<EditOutlined />} aria-label={`編輯 ${device.name}`} onClick={() => onEdit(device)} />
+          <Button type="text" icon={<EditOutlined />} aria-label={`編輯 ${device.name}`} onClick={() => openEditor(device)} />
           <Button type="text" danger icon={<DeleteOutlined />} aria-label={`刪除 ${device.name}`} onClick={() => onRemove(device)} />
         </Space>
       ),
@@ -414,41 +433,49 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
           >
             開始設備檢查
           </Button>
+          <Button icon={<PlusOutlined />} onClick={() => openEditor()}>
+            新增設備
+          </Button>
+          <Button onClick={() => setBatchOpen(true)}>
+            批次新增
+          </Button>
         </div>
       </section>
+
+      <Modal
+        open={editorOpen}
+        title={editing ? "編輯設備" : "新增設備"}
+        width={520}
+        okText={editing ? "儲存連線設定" : "新增設備"}
+        cancelText="取消"
+        destroyOnHidden
+        onCancel={() => setEditorOpen(false)}
+        onOk={() => void submitAndClose()}
+      >
+        <DeviceEditor form={form} onSubmit={submitAndClose} />
+      </Modal>
+
+      <Modal
+        open={batchOpen}
+        title="批次新增設備"
+        width={720}
+        footer={null}
+        destroyOnHidden
+        onCancel={() => setBatchOpen(false)}
+      >
+        <BatchAddPanel
+          existingDevices={devices}
+          onBatchAdded={async (added) => {
+            await onBatchAdded(added);
+            setBatchOpen(false);
+          }}
+        />
+      </Modal>
 
       <Collapse
         className="network-collapse"
         defaultActiveKey={["results"]}
         items={[
-          {
-            key: "editor",
-            label: (
-              <div className="network-collapse-label">
-                <span className="section-kicker">DEVICE SETUP</span>
-                <h2>{editing ? "編輯設備" : "新增設備"}</h2>
-              </div>
-            ),
-            children: (
-              <>
-                <Segmented
-                  block
-                  value={addMode}
-                  onChange={(value) => setAddMode(value as "single" | "batch")}
-                  options={[
-                    { value: "single", label: "單筆新增" },
-                    { value: "batch", label: "批次新增" },
-                  ]}
-                  style={{ marginBottom: 16 }}
-                />
-                {addMode === "single" ? (
-                  <DeviceEditor form={form} editing={editing} onSubmit={onSubmit} />
-                ) : (
-                  <BatchAddPanel existingDevices={devices} onBatchAdded={onBatchAdded} />
-                )}
-              </>
-            ),
-          },
           {
             key: "results",
             label: (
