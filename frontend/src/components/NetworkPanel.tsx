@@ -126,7 +126,7 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
     const targetNames = new Set(targets.map((device) => device.name));
     const seen = new Set<string>();
     try {
-      for (;;) {
+      for (; ;) {
         const detail = await api.getDeviceCheckBatch(batchId);
         for (const record of detail.results) {
           if (!targetNames.has(record.result.device_name) || seen.has(record.result.device_name)) continue;
@@ -358,26 +358,31 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
           <Typography.Paragraph>依每台設備的預設流程檢查 Ping、TCP 或 Modbus，不使用全域覆蓋模式。</Typography.Paragraph>
         </div>
       </section>
+      <section>
+        <div>
+          {batchProgress && (
+            <Alert
+              type="info"
+              showIcon
+              title={`批次檢查進行中：${batchProgress.completed} / ${batchProgress.total} 台`}
+              description="結果會逐步顯示於下方列表。"
+              style={{ marginBottom: 12 }}
+            />
+          )}
+          {autoCheck && (
+            <Alert
+              type="warning"
+              showIcon
+              title="自動檢查僅涵蓋 Ping / TCP 設備"
+              description="完整檢查（Modbus）設備不會被自動檢查，以避免干擾現場樓控系統；如需 Modbus 檢查請手動執行。"
+              style={{ marginBottom: 12 }}
+            />
+          )}
+        </div>
+      </section>
 
       <section className="network-controls" aria-label="網路健檢設定">
-        {batchProgress && (
-          <Alert
-            type="info"
-            showIcon
-            title={`批次檢查進行中：${batchProgress.completed} / ${batchProgress.total} 台`}
-            description="結果會逐步顯示於下方列表。"
-            style={{ marginBottom: 12 }}
-          />
-        )}
-        {autoCheck && (
-          <Alert
-            type="warning"
-            showIcon
-            title="自動檢查僅涵蓋 Ping / TCP 設備"
-            description="完整檢查（Modbus）設備不會被自動檢查，以避免干擾現場樓控系統；如需 Modbus 檢查請手動執行。"
-            style={{ marginBottom: 12 }}
-          />
-        )}
+
         <div className="network-control-field">
           <label htmlFor="network-concurrency">最大並行數</label>
           <InputNumber
@@ -492,14 +497,6 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
                   <Col xs={12} md={6}><Statistic title="異常 / 部分" value={attentionCount} suffix="台" /></Col>
                   <Col xs={12} md={6}><Statistic title="已取得結果" value={checkedResults.length} suffix="台" /></Col>
                 </Row>
-
-                <Alert
-                  type="info"
-                  showIcon
-                  title="即時檢查不寫入歷史"
-                  description="此處僅顯示最新一次檢查結果；需要保留紀錄與基準比較，請使用「回歸測試」。"
-                  style={{ marginBottom: 16 }}
-                />
 
                 <div className="network-section-heading">
                   <Space wrap>
