@@ -65,9 +65,11 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<NetworkCheckStatus | "ALL">("ALL");
   const [autoCheck, setAutoCheck] = useState(false);
-  const [autoIntervalMs, setAutoIntervalMs] = useState(5000);
+  const [autoIntervalMs, setAutoIntervalMs] = useState(600000);
   const [autoChecking, setAutoChecking] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ batchId: string; completed: number; total: number } | null>(null);
   const autoCheckRef = useRef(false);
+  const batchPollRef = useRef<number | undefined>(undefined);
 
   const availableDevices = devices.filter((device) => device.enabled);
 
@@ -98,44 +100,69 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
     ["FAIL", "TIMEOUT", "CONFIG_ERROR", "PARTIAL"].includes(result.overall_status),
   ).length;
 
-  const runChecks = async () => {
-    const outcomes: PromiseSettledResult<NetworkCheckResult>[] = new Array(availableDevices.length);
-    let cursor = 0;
-    const worker = async () => {
-      while (cursor < availableDevices.length) {
-        const index = cursor;
-        cursor += 1;
-        try {
-          outcomes[index] = { status: "fulfilled", value: await api.checkDevice(availableDevices[index].name) };
-        } catch (reason) {
-          outcomes[index] = { status: "rejected", reason };
-        }
-      }
-    };
-    const limit = Math.max(1, Math.min(maxConcurrency, availableDevices.length));
-    await Promise.all(Array.from({ length: limit }, () => worker()));
-    setSingleResults((current) => {
-      const next = { ...current };
-      outcomes.forEach((outcome, index) => {
-        if (outcome.status === "fulfilled") {
-          next[availableDevices[index].name] = outcome.value;
-        }
+  /** 方案 C：Modbus 檢查一律手動，autoCheck 僅涵蓋 ping / ping_tcp 設備 */
+  const autoCheckDevices = useMemo(
+    () => availableDevices.filter((device) => device.check_profile !== "full_stack"),
+    [availableDevices],
+  );
+
+  /** 方案 A：建立批次 + 每 2 秒輪詢，逐步將已完成結果寫入 singleResults */
+  const runBatchCheck = async (targets: Device[]): Promise<boolean> => {
+    if (!targets.length) return false;
+    setCheckingAll(true);
+    const batchId = await api.createDeviceCheckBatch(siteName, Math.max(1, Math.min(50, maxConcurrency)))
+      .then((batch) => batch.id)
+      .catch((error: unknown) => {
+        message.error(error instanceof Error ? error.message : "批次建立失敗");
+        return null;
       });
-      return next;
-    });
-    return outcomes;
+    if (!batchId) {
+      setCheckingAll(false);
+      return false;
+    }
+    setBatchProgress({ batchId, completed: 0, total: targets.length });
+    const targetNames = new Set(targets.map((device) => device.name));
+    const seen = new Set<string>();
+    try {
+      for (;;) {
+        const detail = await api.getDeviceCheckBatch(batchId);
+        for (const record of detail.results) {
+          if (!targetNames.has(record.result.device_name) || seen.has(record.result.device_name)) continue;
+          seen.add(record.result.device_name);
+          setSingleResults((current) => ({ ...current, [record.result.device_name]: record.result }));
+        }
+        setBatchProgress({ batchId, completed: detail.batch.completed_device_count, total: targets.length });
+        if (detail.batch.status !== "pending" && detail.batch.status !== "running") {
+          if (detail.batch.status === "completed") message.success(`設備檢查完成（${detail.batch.completed_device_count} 台）`);
+          else if (detail.batch.status === "cancelled") message.info("設備檢查已取消");
+          else message.error(detail.batch.error_message || "設備檢查批次失敗");
+          return detail.batch.status === "completed";
+        }
+        await new Promise<void>((resolve) => {
+          batchPollRef.current = window.setTimeout(resolve, 2000);
+        });
+      }
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "批次輪詢失敗");
+      return false;
+    } finally {
+      setCheckingAll(false);
+      setBatchProgress(null);
+    }
   };
 
   const checkAll = async () => {
     if (!availableDevices.length) return;
-    setCheckingAll(true);
+    await runBatchCheck(availableDevices);
+  };
+
+  const cancelBatch = async () => {
+    if (!batchProgress) return;
     try {
-      const results = await runChecks();
-      const failed = results.filter((outcome) => outcome.status === "rejected").length;
-      if (failed) message.warning(`${failed} 台設備檢查失敗`);
-      else message.success("設備檢查完成");
-    } finally {
-      setCheckingAll(false);
+      await api.cancelDeviceCheckBatch(batchProgress.batchId);
+      message.info("取消中…");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "取消批次失敗");
     }
   };
 
@@ -156,7 +183,7 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
     if (autoChecking) return;
     setAutoChecking(true);
     try {
-      await runChecks();
+      await runBatchCheck(autoCheckDevices);
     } finally {
       setAutoChecking(false);
     }
@@ -286,7 +313,7 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
       align: "right",
       render: (_: unknown, device) => (
         <Space size={2}>
-          <Tooltip title={`測試 ${device.name}`}>
+          <Tooltip title={device.check_profile === "full_stack" ? "測試（會建立 Modbus 連線，可能與樓控系統互相干擾）" : `測試 ${device.name}`}>
             <Button
               type="text"
               icon={<ReloadOutlined />}
@@ -314,6 +341,24 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
       </section>
 
       <section className="network-controls" aria-label="網路健檢設定">
+        {batchProgress && (
+          <Alert
+            type="info"
+            showIcon
+            title={`批次檢查進行中：${batchProgress.completed} / ${batchProgress.total} 台`}
+            description="結果會逐步顯示於下方列表。"
+            style={{ marginBottom: 12 }}
+          />
+        )}
+        {autoCheck && (
+          <Alert
+            type="warning"
+            showIcon
+            title="自動檢查僅涵蓋 Ping / TCP 設備"
+            description="完整檢查（Modbus）設備不會被自動檢查，以避免干擾現場樓控系統；如需 Modbus 檢查請手動執行。"
+            style={{ marginBottom: 12 }}
+          />
+        )}
         <div className="network-control-field">
           <label htmlFor="network-concurrency">最大並行數</label>
           <InputNumber
@@ -327,13 +372,16 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
         </div>
         <div className="network-control-field">
           <label htmlFor="network-auto-interval">自動檢查間隔</label>
-          <InputNumber
+          <Select
             id="network-auto-interval"
-            min={1}
-            max={3600}
-            value={Math.round(autoIntervalMs / 1000)}
-            onChange={(value) => setAutoIntervalMs((value ?? 5) * 1000)}
-            addonAfter="秒"
+            value={autoIntervalMs}
+            onChange={(value) => setAutoIntervalMs(value)}
+            options={[
+              { value: 60000, label: "60 秒" },
+              { value: 300000, label: "5 分鐘" },
+              { value: 600000, label: "10 分鐘" },
+            ]}
+            style={{ width: 120 }}
             disabled={autoCheck}
           />
         </div>
@@ -352,6 +400,11 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
           </Space>
         </div>
         <div className="network-control-actions">
+          {batchProgress && (
+            <Button danger icon={<ReloadOutlined />} onClick={() => void cancelBatch()}>
+              取消檢查（{batchProgress.completed}/{batchProgress.total}）
+            </Button>
+          )}
           <Button
             type="primary"
             icon={<PlayCircleOutlined />}
