@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, App as AntApp, Button, Col, Collapse, Input, InputNumber, Row, Select, Space, Statistic, Switch, Table, Tag, Tooltip, Typography } from "antd";
+import { Alert, App as AntApp, Button, Col, Collapse, Input, InputNumber, Row, Segmented, Select, Space, Statistic, Switch, Table, Tag, Tooltip, Typography } from "antd";
 import type { FormInstance, TableColumnsType } from "antd";
 import { DeleteOutlined, EditOutlined, PlayCircleOutlined, ReloadOutlined } from "@ant-design/icons";
 import {
@@ -10,6 +10,7 @@ import {
 } from "../api/client";
 import type { Device } from "../api/mappers";
 import { DeviceEditor } from "./DeviceEditor";
+import { BatchAddPanel } from "./BatchAddPanel";
 
 const statusMeta: Record<NetworkCheckStatus, { label: string; color: string; priority: number }> = {
   CONFIG_ERROR: { label: "設定錯誤", color: "error", priority: 0 },
@@ -51,10 +52,12 @@ type NetworkPanelProps = {
   onEdit: (device: Device) => void;
   onRemove: (device: Device) => void;
   onSubmit: () => void | Promise<void>;
+  onBatchAdded: (added: DeviceConfig[]) => void | Promise<void>;
 };
 
-export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemove, onSubmit }: NetworkPanelProps) {
+export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemove, onSubmit, onBatchAdded }: NetworkPanelProps) {
   const { message } = AntApp.useApp();
+  const [addMode, setAddMode] = useState<"single" | "batch">("single");
   const [maxConcurrency, setMaxConcurrency] = useState(20);
   const [checkingAll, setCheckingAll] = useState(false);
   const [checkingDevice, setCheckingDevice] = useState<string | null>(null);
@@ -374,7 +377,23 @@ export function NetworkPanel({ siteName, devices, form, editing, onEdit, onRemov
               </div>
             ),
             children: (
-              <DeviceEditor form={form} editing={editing} onSubmit={onSubmit} />
+              <>
+                <Segmented
+                  block
+                  value={addMode}
+                  onChange={(value) => setAddMode(value as "single" | "batch")}
+                  options={[
+                    { value: "single", label: "單筆新增" },
+                    { value: "batch", label: "批次新增" },
+                  ]}
+                  style={{ marginBottom: 16 }}
+                />
+                {addMode === "single" ? (
+                  <DeviceEditor form={form} editing={editing} onSubmit={onSubmit} />
+                ) : (
+                  <BatchAddPanel existingDevices={devices} onBatchAdded={onBatchAdded} />
+                )}
+              </>
             ),
           },
           {

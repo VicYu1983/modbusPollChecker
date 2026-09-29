@@ -246,6 +246,9 @@ function Dashboard() {
     setEditing(device);
     form.setFieldsValue(device);
   };
+  const handleBatchAdded = (added: DeviceConfig[]) => {
+    setDevices((current) => [...current, ...added.map((device) => toDevice(device))]);
+  };
   const remove = (device: Device) =>
     Modal.confirm({
       title: `刪除 ${device.name}？`,
@@ -382,6 +385,7 @@ function Dashboard() {
             onEdit={openEdit}
             onRemove={remove}
             onSubmit={submit}
+            onBatchAdded={handleBatchAdded}
           />
         )}
         {activeModule === "legacy_connection" && (
