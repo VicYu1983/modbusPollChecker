@@ -6,8 +6,12 @@ venv/
 
 frontend/node_modules/
 frontend/dist/
+build/
+artifacts/
 
-data/site.json
+/data/*.json
+/temp.csv
+/* - IP.csv
 backend/data/*.db
 backend/data/*.db-*
 backend/data/reports/

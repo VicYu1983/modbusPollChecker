@@ -71,6 +71,18 @@ start.bat
 
 首次啟動時，`start.bat` 會檢查並安裝 backend Python 依賴；前端依賴仍需先在 `frontend` 目錄安裝完成。
 
+## Windows 發布包
+
+在開發電腦上安裝 Python 3.10 或更新版本、Node.js 22 LTS，並確保網路可下載套件。於專案根目錄執行：
+
+```powershell
+build_release.bat
+```
+
+建置完成後，發布檔會產生於 `artifacts/ModbusPollChecker-windows-x64.zip`。將 ZIP 分享給同事；同事解壓後執行裡面的 `start.bat`，不需要安裝 Python、Node.js 或專案套件。啟動器會選擇 `8000` 至 `8010` 間可用的本機連接埠並開啟瀏覽器。
+
+案場設定與檢查歷史會保存在解壓目錄內的 `data/` 和 `backend/data/`；更新程式時請先備份這兩個資料夾。發布包不會包含開發電腦上的案場設定或歷史資料。
+
 ## 手動啟動
 
 ### Backend

@@ -4,11 +4,13 @@ import asyncio
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
+import sys
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 from urllib.parse import quote
 
 from .check_service import CheckService
@@ -69,7 +71,13 @@ from .services.report_service import ReportService, UnsupportedReportFormatError
 from .site_store import SiteStore
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parents[2]
+)
+BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", ROOT))
+FRONTEND_DIST = BUNDLE_ROOT / "frontend" / "dist"
 store = SiteStore(ROOT / "data")
 check_service = CheckService()
 network_adapter = NetworkAdapter()
@@ -612,3 +620,7 @@ def stop_polling() -> dict[str, object]:
 @app.get("/api/polling/status")
 def get_polling_status() -> dict[str, object]:
     return check_service.polling_status().model_dump(mode="json")
+
+
+if FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
