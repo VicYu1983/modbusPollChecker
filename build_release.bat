@@ -82,7 +82,7 @@ mkdir "%PACKAGE_DIR%"
 if errorlevel 1 goto :package_failed
 xcopy "%PYINSTALLER_DIST%\ModbusPollChecker\*" "%PACKAGE_DIR%\" /e /i /y >nul
 if errorlevel 1 goto :package_failed
-copy /y "%ROOT%start_release.bat" "%PACKAGE_DIR%\start.bat" >nul
+copy /y "%ROOT%start_release.bat" "%PACKAGE_DIR%\start_release.bat" >nul
 if errorlevel 1 goto :package_failed
 
 if not exist "%ARTIFACT_DIR%" mkdir "%ARTIFACT_DIR%"
@@ -94,7 +94,7 @@ if errorlevel 1 goto :archive_failed
 echo.
 echo Release package created:
 echo   %ARTIFACT_ZIP%
-echo Share this ZIP with coworkers. They should extract it and run start.bat.
+echo Share this ZIP with coworkers. They should extract it and run start_release.bat.
 pause
 exit /b 0
 

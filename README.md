@@ -79,7 +79,7 @@ start.bat
 build_release.bat
 ```
 
-建置完成後，發布檔會產生於 `artifacts/ModbusPollChecker-windows-x64.zip`。將 ZIP 分享給同事；同事解壓後執行裡面的 `start.bat`，不需要安裝 Python、Node.js 或專案套件。啟動器會選擇 `8000` 至 `8010` 間可用的本機連接埠並開啟瀏覽器。
+建置完成後，發布檔會產生於 `artifacts/ModbusPollChecker-windows-x64.zip`。將 ZIP 分享給同事；同事解壓後執行裡面的 `start_release.bat`，不需要安裝 Python、Node.js 或專案套件。啟動器會選擇 `8000` 至 `8010` 間可用的本機連接埠並開啟瀏覽器。
 
 案場設定與檢查歷史會保存在解壓目錄內的 `data/` 和 `backend/data/`；更新程式時請先備份這兩個資料夾。發布包不會包含開發電腦上的案場設定或歷史資料。
 
