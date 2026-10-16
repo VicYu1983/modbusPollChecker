@@ -62,14 +62,14 @@ npm install
 start.bat
 ```
 
-批次檔會開啟兩個 PowerShell 視窗：
+批次檔會開啟兩個 PowerShell 視窗，並在前端服務啟動後自動以預設瀏覽器開啟網頁：
 
 - Backend：<http://127.0.0.1:8000>
 - Frontend：<http://127.0.0.1:5173>
 
 開啟 <http://127.0.0.1:5173> 使用工具。
 
-首次啟動時，`start.bat` 會檢查並安裝 backend Python 依賴；前端依賴仍需先在 `frontend` 目錄安裝完成。
+首次啟動時，`start.bat` 會檢查並安裝 backend Python 依賴，也會在前端依賴（包含 Vite）缺少或不完整時，自動使用 pnpm 或 npm 安裝前端依賴。
 
 ## Windows 發布包
 
