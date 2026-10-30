@@ -12,9 +12,7 @@ if errorlevel 1 (
 	if errorlevel 1 goto :backend_install_failed
 )
 
-where pnpm >nul 2>nul
-if not errorlevel 1 goto :check_frontend
-where npm >nul 2>nul
+where yarn >nul 2>nul
 if errorlevel 1 goto :node_missing
 
 :check_frontend
@@ -23,12 +21,7 @@ if exist "%ROOT%frontend\node_modules\vite\bin\vite.js" goto :start_services
 echo Installing frontend dependencies...
 pushd "%ROOT%frontend"
 if errorlevel 1 goto :frontend_install_failed
-where pnpm >nul 2>nul
-if not errorlevel 1 (
-	pnpm install --frozen-lockfile
-) else (
-	npm install
-)
+call yarn install --frozen-lockfile
 if errorlevel 1 (
 	popd
 	goto :frontend_install_failed
@@ -42,9 +35,7 @@ echo Starting Modbus Poll Checker backend...
 start "Modbus Backend" powershell -NoExit -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%backend'; python -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
 
 echo Starting Modbus Poll Checker frontend...
-rem Prefer the locally installed Vite binary so we do not depend on pnpm,
-rem which may be blocked by Windows Application Control.
-start "Modbus Frontend" powershell -NoExit -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%frontend'; if (Test-Path '.\node_modules\.bin\vite.cmd') { & '.\node_modules\.bin\vite.cmd' --host 127.0.0.1 } else { npm run dev -- --host 127.0.0.1 }"
+start "Modbus Frontend" powershell -NoExit -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%frontend'; yarn dev --host 127.0.0.1"
 
 echo Waiting for the frontend to become available...
 start "" powershell -NoProfile -WindowStyle Hidden -Command "$url = 'http://127.0.0.1:5173'; $deadline = (Get-Date).AddSeconds(60); while ((Get-Date) -lt $deadline) { if (Test-NetConnection -ComputerName '127.0.0.1' -Port 5173 -InformationLevel Quiet -WarningAction SilentlyContinue) { Start-Process $url; exit }; Start-Sleep -Milliseconds 500 }; Start-Process $url"
@@ -60,7 +51,7 @@ pause
 exit /b 1
 
 :node_missing
-echo ERROR: Node.js and pnpm were not found. Please install Node.js.
+echo ERROR: Node.js and yarn were not found. Please install Node.js and Yarn.
 pause
 exit /b 1
 
@@ -71,6 +62,6 @@ exit /b 1
 
 :frontend_install_failed
 echo ERROR: Frontend dependency installation failed or Vite is still missing.
-echo Run pnpm install or npm install in the frontend directory, then try again.
+echo Run yarn install in the frontend directory, then try again.
 pause
 exit /b 1

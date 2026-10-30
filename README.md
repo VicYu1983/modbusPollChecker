@@ -34,7 +34,7 @@ Modbus Poll Checker 是一套執行於本機的案場設備檢查工具，用來
 - Windows 10 或更新版本
 - Python 3.10 或更新版本
 - Node.js 18 或更新版本
-- pnpm，或可替代使用 npm
+- Yarn
 - 可連線至待檢查的設備
 
 ## 快速開始
@@ -45,13 +45,7 @@ Modbus Poll Checker 是一套執行於本機的案場設備檢查工具，用來
 
 ```powershell
 cd frontend
-pnpm install
-```
-
-若沒有 pnpm，也可以使用：
-
-```powershell
-npm install
+yarn install
 ```
 
 ### 2. 啟動服務
@@ -69,11 +63,11 @@ start.bat
 
 開啟 <http://127.0.0.1:5173> 使用工具。
 
-首次啟動時，`start.bat` 會檢查並安裝 backend Python 依賴，也會在前端依賴（包含 Vite）缺少或不完整時，自動使用 pnpm 或 npm 安裝前端依賴。
+首次啟動時，`start.bat` 會檢查並安裝 backend Python 依賴，也會在前端依賴（包含 Vite）缺少或不完整時，自動使用 yarn 安裝前端依賴。
 
 ## Windows 發布包
 
-在開發電腦上安裝 Python 3.10 或更新版本、Node.js 22 LTS，並確保網路可下載套件。於專案根目錄執行：
+在開發電腦上安裝 Python 3.10 或更新版本、Node.js 22 LTS、Yarn，並確保網路可下載套件。於專案根目錄執行：
 
 ```powershell
 build_release.bat
@@ -95,6 +89,8 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
+`requirements.txt` 刻意不使用 `uvicorn[standard]`，因為它會連帶安裝 `pyyaml` 等需要 Microsoft C++ Build Tools 才能編譯的套件；本專案不需要這些額外元件。
+
 Backend 啟動後可透過以下網址查看 FastAPI 文件：
 
 - Swagger UI：<http://127.0.0.1:8000/docs>
@@ -106,7 +102,7 @@ Backend 啟動後可透過以下網址查看 FastAPI 文件：
 
 ```powershell
 cd frontend
-pnpm run dev -- --host 127.0.0.1
+yarn dev --host 127.0.0.1
 ```
 
 Vite 會將 `/api` 請求代理到 `http://127.0.0.1:8000`。
@@ -189,14 +185,14 @@ python -m unittest discover -s tests
 
 ```powershell
 cd frontend
-pnpm run lint
+yarn lint
 ```
 
 ### Frontend production build
 
 ```powershell
 cd frontend
-pnpm run build
+yarn build
 ```
 
 目前 build 可能顯示 JavaScript bundle 大小警告；這是已知的前端 code splitting 待辦，不會阻止 build 完成。
@@ -273,7 +269,7 @@ FastAPI
 - 修改 backend API 後，請同步確認 `frontend/src/api/client.ts` 與畫面使用方式。
 - 修改資料模型或 SQLite schema 時，需補上 migration 與回歸測試。
 - 批次刪除不可刪除進行中的批次，也不可直接刪除目前基準批次；請先清除基準。
-- 變更 UI 元件後至少執行 `pnpm run lint` 與 `pnpm run build`。
+- 變更 UI 元件後至少執行 `yarn lint` 與 `yarn build`。
 - 不要把前端 bundle splitting、無關格式化或大型重構混入設備通訊功能修改。
 
 ## 相關文件

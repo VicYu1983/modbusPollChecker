@@ -29,33 +29,22 @@ if errorlevel 1 goto :backend_install_failed
 
 where node >nul 2>nul
 if errorlevel 1 goto :node_missing
-where npm >nul 2>nul
+where yarn >nul 2>nul
 if errorlevel 1 goto :node_missing
 
 if exist "%ROOT%frontend\node_modules" goto :frontend_ready
-where pnpm >nul 2>nul
-if not errorlevel 1 (
-	pushd "%ROOT%frontend"
-	call pnpm install --frozen-lockfile
-	if errorlevel 1 (
-		popd
-		goto :frontend_install_failed
-	)
+pushd "%ROOT%frontend"
+call yarn install --frozen-lockfile
+if errorlevel 1 (
 	popd
-) else (
-	pushd "%ROOT%frontend"
-	call npm install --no-package-lock
-	if errorlevel 1 (
-		popd
-		goto :frontend_install_failed
-	)
-	popd
+	goto :frontend_install_failed
 )
+popd
 
 :frontend_ready
 echo Building frontend...
 pushd "%ROOT%frontend"
-call npm run build
+call yarn build
 if errorlevel 1 (
 	popd
 	goto :frontend_build_failed
@@ -114,7 +103,7 @@ pause
 exit /b 1
 
 :node_missing
-echo ERROR: Install Node.js 22 LTS before building the release.
+echo ERROR: Install Node.js 22 LTS and Yarn before building the release.
 pause
 exit /b 1
 
